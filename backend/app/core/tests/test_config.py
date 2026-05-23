@@ -232,8 +232,8 @@ def _set_demo_safe_defaults(monkeypatch) -> None:
     monkeypatch.setenv("ALLOWED_HOSTS", "demo-api.stima.dev")
     monkeypatch.setenv("STORAGE_BACKEND", "local")
     monkeypatch.setenv("LOCAL_STORAGE_ROOT", "var/demo-storage")
-    monkeypatch.delenv("REDIS_URL", raising=False)
-    monkeypatch.delenv("GCS_BUCKET_NAME", raising=False)
+    monkeypatch.setenv("REDIS_URL", "")
+    monkeypatch.setenv("GCS_BUCKET_NAME", "")
 
 
 def test_demo_allows_missing_redis_and_gcs_with_local_storage(monkeypatch) -> None:
