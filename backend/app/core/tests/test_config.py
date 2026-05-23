@@ -55,6 +55,14 @@ def test_worker_concurrency_defaults_to_ten() -> None:
     assert settings.worker_concurrency == 10
 
 
+def test_demo_runtime_settings_default_to_queue_and_gcs() -> None:
+    settings = get_settings()
+
+    assert settings.job_execution_mode == "queue"
+    assert settings.storage_backend == "gcs"
+    assert settings.local_storage_root == "var/storage"
+
+
 def test_worker_concurrency_must_be_positive(monkeypatch) -> None:
     monkeypatch.setenv("WORKER_CONCURRENCY", "0")
 
@@ -185,11 +193,23 @@ def test_cookie_samesite_none_requires_secure(monkeypatch) -> None:
         get_settings()
 
 
-def test_gcs_bucket_name_is_required(monkeypatch) -> None:
+def test_gcs_bucket_name_is_required_for_gcs_backend(monkeypatch) -> None:
     monkeypatch.delenv("GCS_BUCKET_NAME", raising=False)
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="GCS_BUCKET_NAME must be set"):
         Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_gcs_bucket_name_is_not_required_for_local_storage_backend(monkeypatch) -> None:
+    monkeypatch.delenv("GCS_BUCKET_NAME", raising=False)
+    monkeypatch.setenv("STORAGE_BACKEND", "local")
+    monkeypatch.setenv("LOCAL_STORAGE_ROOT", " ")
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.gcs_bucket_name == ""
+    assert settings.storage_backend == "local"
+    assert settings.local_storage_root == "var/storage"
 
 
 def _set_production_safe_defaults(monkeypatch) -> None:
@@ -201,6 +221,53 @@ def _set_production_safe_defaults(monkeypatch) -> None:
     monkeypatch.setenv("ALLOWED_HOSTS", "api.stima.dev")
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
     monkeypatch.setenv("ALLOW_REDIS_DEGRADED_MODE", "false")
+
+
+def _set_demo_safe_defaults(monkeypatch) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "demo")
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    monkeypatch.setenv("COOKIE_HTTPONLY", "true")
+    monkeypatch.setenv("FRONTEND_URL", "https://demo.stima.dev")
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://demo.stima.dev")
+    monkeypatch.setenv("ALLOWED_HOSTS", "demo-api.stima.dev")
+    monkeypatch.setenv("STORAGE_BACKEND", "local")
+    monkeypatch.setenv("LOCAL_STORAGE_ROOT", "var/demo-storage")
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("GCS_BUCKET_NAME", raising=False)
+
+
+def test_demo_allows_missing_redis_and_gcs_with_local_storage(monkeypatch) -> None:
+    _set_demo_safe_defaults(monkeypatch)
+
+    settings = get_settings()
+
+    assert settings.environment == "demo"
+    assert settings.redis_url is None
+    assert settings.storage_backend == "local"
+    assert settings.gcs_bucket_name == ""
+
+
+@pytest.mark.parametrize(
+    ("setting_name", "value", "message"),
+    [
+        ("COOKIE_SECURE", "false", "COOKIE_SECURE must be true"),
+        ("COOKIE_HTTPONLY", "false", "COOKIE_HTTPONLY must be true"),
+        ("ALLOWED_ORIGINS", "*", "ALLOWED_ORIGINS must not contain wildcard"),
+        ("ALLOWED_HOSTS", "*", "ALLOWED_HOSTS must not contain"),
+        ("FRONTEND_URL", "http://localhost:5173", "FRONTEND_URL must not use localhost"),
+    ],
+)
+def test_demo_preserves_deployed_cookie_origin_and_host_hardening(
+    monkeypatch,
+    setting_name: str,
+    value: str,
+    message: str,
+) -> None:
+    _set_demo_safe_defaults(monkeypatch)
+    monkeypatch.setenv(setting_name, value)
+
+    with pytest.raises(ValidationError, match=message):
+        get_settings()
 
 
 @pytest.mark.parametrize("wildcard_origin", ["*", "http://*", "https://*"])

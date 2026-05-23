@@ -106,3 +106,21 @@ async def test_resolve_runtime_state_allows_missing_redis_in_development_default
 
     assert runtime_state.mode == "degraded_memory"
     assert runtime_state.degraded_reason == "redis_missing"
+
+
+@pytest.mark.asyncio
+async def test_resolve_runtime_state_allows_missing_redis_in_demo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "demo")
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    monkeypatch.setenv("FRONTEND_URL", "https://demo.stima.dev")
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://demo.stima.dev")
+    monkeypatch.setenv("ALLOWED_HOSTS", "demo-api.stima.dev")
+    monkeypatch.setenv("REDIS_URL", "")
+    get_settings.cache_clear()
+
+    runtime_state = await resolve_redis_runtime_state(get_settings())
+
+    assert runtime_state.mode == "degraded_memory"
+    assert runtime_state.degraded_reason == "redis_missing"

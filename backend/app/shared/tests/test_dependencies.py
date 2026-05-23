@@ -6,6 +6,7 @@ from collections.abc import Iterator
 
 import pytest
 from app.core.config import get_settings
+from app.integrations.storage import LocalStorageService, StorageService
 from app.shared import dependencies
 
 
@@ -23,9 +24,11 @@ def _reset_dependency_caches(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("PROVIDER_REQUEST_TIMEOUT_SECONDS", "21.5")
     monkeypatch.setenv("PROVIDER_MAX_RETRIES", "4")
     get_settings.cache_clear()
+    dependencies._build_storage_service.cache_clear()  # noqa: SLF001
     dependencies.get_extraction_integration.cache_clear()
     dependencies.get_transcription_integration.cache_clear()
     yield
+    dependencies._build_storage_service.cache_clear()  # noqa: SLF001
     dependencies.get_extraction_integration.cache_clear()
     dependencies.get_transcription_integration.cache_clear()
     get_settings.cache_clear()
@@ -60,3 +63,30 @@ def test_get_extraction_service_reuses_provider_singletons() -> None:
 
     assert first._extraction is second._extraction  # noqa: SLF001
     assert first._transcription is second._transcription  # noqa: SLF001
+
+
+def test_get_storage_service_cache_keys_backend_and_local_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("STORAGE_BACKEND", "local")
+    monkeypatch.setenv("LOCAL_STORAGE_ROOT", str(tmp_path / "one"))
+    monkeypatch.delenv("GCS_BUCKET_NAME", raising=False)
+    get_settings.cache_clear()
+
+    first = dependencies.get_storage_service()
+
+    monkeypatch.setenv("LOCAL_STORAGE_ROOT", str(tmp_path / "two"))
+    get_settings.cache_clear()
+    second = dependencies.get_storage_service()
+
+    monkeypatch.setenv("STORAGE_BACKEND", "gcs")
+    monkeypatch.setenv("GCS_BUCKET_NAME", "stima-test-logos")
+    get_settings.cache_clear()
+    third = dependencies.get_storage_service()
+
+    assert isinstance(first, LocalStorageService)
+    assert isinstance(second, LocalStorageService)
+    assert isinstance(third, StorageService)
+    assert first is not second
+    assert third is not first

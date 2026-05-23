@@ -12,7 +12,9 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 MIN_SECRET_KEY_LENGTH = 32
 MIN_ADMIN_API_KEY_LENGTH = 32
+DEFAULT_LOCAL_STORAGE_ROOT = "var/storage"
 LOCALHOST_HOSTS = frozenset({"localhost", "127.0.0.1", "0.0.0.0", "::1"})  # nosec B104
+DEPLOYED_ENVIRONMENTS = frozenset({"production", "demo"})
 FORBIDDEN_SECRET_KEY_VALUES = frozenset(
     {
         "dev-secret-key-change-in-production",
@@ -76,6 +78,10 @@ class Settings(BaseSettings):
 
     environment: str = Field(default="development", validation_alias="ENVIRONMENT")
     redis_url: str | None = Field(default=None, validation_alias="REDIS_URL")
+    job_execution_mode: Literal["queue", "inline"] = Field(
+        default="queue",
+        validation_alias="JOB_EXECUTION_MODE",
+    )
     allow_redis_degraded_mode: bool = Field(
         default=False,
         validation_alias="ALLOW_REDIS_DEGRADED_MODE",
@@ -268,6 +274,15 @@ class Settings(BaseSettings):
         validation_alias="GCS_BUCKET_NAME",
         validate_default=True,
     )
+    storage_backend: Literal["gcs", "local"] = Field(
+        default="gcs",
+        validation_alias="STORAGE_BACKEND",
+    )
+    local_storage_root: str = Field(
+        default=DEFAULT_LOCAL_STORAGE_ROOT,
+        validation_alias="LOCAL_STORAGE_ROOT",
+        validate_default=True,
+    )
 
     @field_validator("cookie_domain", mode="before")
     @classmethod
@@ -337,14 +352,22 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY cannot use placeholder/dev values")
         return normalized_value
 
-    @field_validator("gcs_bucket_name")
+    @field_validator("gcs_bucket_name", mode="before")
     @classmethod
-    def validate_gcs_bucket_name(cls, value: str) -> str:
-        """Require a non-empty GCS bucket name for private asset storage."""
-        normalized_value = value.strip()
-        if not normalized_value:
-            raise ValueError("GCS_BUCKET_NAME must be set and non-empty")
-        return normalized_value
+    def normalize_gcs_bucket_name(cls, value: Any) -> str:
+        """Normalize optional GCS bucket config before backend-aware validation."""
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    @field_validator("local_storage_root", mode="before")
+    @classmethod
+    def normalize_local_storage_root(cls, value: Any) -> str:
+        """Treat blank local storage roots as the safe default path."""
+        if value is None:
+            return DEFAULT_LOCAL_STORAGE_ROOT
+        normalized_value = str(value).strip()
+        return normalized_value or DEFAULT_LOCAL_STORAGE_ROOT
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
@@ -445,48 +468,64 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def validate_storage_settings(self) -> Settings:
+        """Require backend-specific storage settings only for the selected backend."""
+        if self.storage_backend == "gcs" and not self.gcs_bucket_name:
+            raise ValueError(
+                "GCS_BUCKET_NAME must be set and non-empty when STORAGE_BACKEND is 'gcs'"
+            )
+        return self
+
+    @model_validator(mode="after")
     def validate_production_boundary_settings(self) -> Settings:
-        """Require production-safe cookie, origin, and host settings."""
-        if self.environment.lower() != "production":
+        """Require deployed-safe cookie, origin, and host settings."""
+        environment = self.environment.lower()
+        if environment not in DEPLOYED_ENVIRONMENTS:
             return self
 
         if not self.cookie_secure:
-            raise ValueError("COOKIE_SECURE must be true when ENVIRONMENT is 'production'")
+            raise ValueError(f"COOKIE_SECURE must be true when ENVIRONMENT is '{environment}'")
         if not self.cookie_httponly:
-            raise ValueError("COOKIE_HTTPONLY must be true when ENVIRONMENT is 'production'")
+            raise ValueError(f"COOKIE_HTTPONLY must be true when ENVIRONMENT is '{environment}'")
         if not self.allowed_origins:
-            raise ValueError("ALLOWED_ORIGINS must be non-empty when ENVIRONMENT is 'production'")
+            raise ValueError(
+                f"ALLOWED_ORIGINS must be non-empty when ENVIRONMENT is '{environment}'"
+            )
         for allowed_origin in self.allowed_origins:
             if "*" in allowed_origin:
                 raise ValueError(
                     "ALLOWED_ORIGINS must not contain wildcard values "
-                    "when ENVIRONMENT is 'production'"
+                    f"when ENVIRONMENT is '{environment}'"
                 )
             parsed_allowed_origin = urlparse(allowed_origin)
             if parsed_allowed_origin.scheme != "https" or not parsed_allowed_origin.netloc:
                 raise ValueError(
                     "ALLOWED_ORIGINS entries must be explicit https origins "
-                    "when ENVIRONMENT is 'production'"
+                    f"when ENVIRONMENT is '{environment}'"
                 )
             if parsed_allowed_origin.hostname in LOCALHOST_HOSTS:
                 raise ValueError(
                     "ALLOWED_ORIGINS entries must not use localhost "
-                    "when ENVIRONMENT is 'production'"
+                    f"when ENVIRONMENT is '{environment}'"
                 )
         if not self.allowed_hosts:
-            raise ValueError("ALLOWED_HOSTS must be non-empty when ENVIRONMENT is 'production'")
+            raise ValueError(f"ALLOWED_HOSTS must be non-empty when ENVIRONMENT is '{environment}'")
         if "*" in self.allowed_hosts:
-            raise ValueError("ALLOWED_HOSTS must not contain '*' when ENVIRONMENT is 'production'")
-        if self.allow_redis_degraded_mode:
+            raise ValueError(
+                f"ALLOWED_HOSTS must not contain '*' when ENVIRONMENT is '{environment}'"
+            )
+        if environment == "production" and self.allow_redis_degraded_mode:
             raise ValueError(
                 "ALLOW_REDIS_DEGRADED_MODE must be false when ENVIRONMENT is 'production'"
             )
         parsed_frontend_url = urlparse(self.frontend_url)
         if parsed_frontend_url.hostname in LOCALHOST_HOSTS:
-            raise ValueError("FRONTEND_URL must not use localhost when ENVIRONMENT is 'production'")
-        if self.redis_url is None:
+            raise ValueError(
+                f"FRONTEND_URL must not use localhost when ENVIRONMENT is '{environment}'"
+            )
+        if environment == "production" and self.redis_url is None:
             raise ValueError("REDIS_URL must be set when ENVIRONMENT is 'production'")
-        if self.admin_api_key is not None:
+        if environment == "production" and self.admin_api_key is not None:
             if self.admin_api_key.lower() in FORBIDDEN_ADMIN_API_KEY_VALUES:
                 raise ValueError(
                     "ADMIN_API_KEY cannot use placeholder/dev values "
