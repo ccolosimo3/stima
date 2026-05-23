@@ -43,7 +43,7 @@ from app.integrations.audio import AudioIntegration
 from app.integrations.email import EmailService
 from app.integrations.extraction import ExtractionIntegration
 from app.integrations.pdf import PdfIntegration
-from app.integrations.storage import StorageService
+from app.integrations.storage import LocalStorageService, StorageService, StorageServiceProtocol
 from app.integrations.transcription import TranscriptionIntegration
 from app.shared.idempotency import IdempotencyStore, build_idempotency_store
 from app.shared.pdf_artifact_repository import PdfArtifactRepository
@@ -61,15 +61,25 @@ def get_pdf_integration() -> PdfIntegration:
 
 
 @cache
-def _build_storage_service(bucket_name: str) -> StorageService:
-    """Return one shared storage service per configured bucket."""
+def _build_storage_service(
+    storage_backend: str,
+    bucket_name: str,
+    local_storage_root: str,
+) -> StorageServiceProtocol:
+    """Return one shared storage service per configured backend."""
+    if storage_backend == "local":
+        return LocalStorageService(root=local_storage_root)
     return StorageService(bucket_name=bucket_name)
 
 
-def get_storage_service() -> StorageService:
+def get_storage_service() -> StorageServiceProtocol:
     """Return the configured private storage service."""
     settings = get_settings()
-    return _build_storage_service(settings.gcs_bucket_name)
+    return _build_storage_service(
+        settings.storage_backend,
+        settings.gcs_bucket_name,
+        settings.local_storage_root,
+    )
 
 
 @lru_cache(maxsize=1)
@@ -147,7 +157,7 @@ def get_auth_service(
 
 def get_profile_service(
     db: Annotated[AsyncSession, Depends(get_db)],
-    storage_service: Annotated[StorageService, Depends(get_storage_service)],
+    storage_service: Annotated[StorageServiceProtocol, Depends(get_storage_service)],
 ) -> ProfileService:
     """Build a request-scoped profile service wired to the DB session."""
     return ProfileService(
@@ -159,7 +169,7 @@ def get_profile_service(
 
 def get_customer_service(
     db: Annotated[AsyncSession, Depends(get_db)],
-    storage_service: Annotated[StorageService, Depends(get_storage_service)],
+    storage_service: Annotated[StorageServiceProtocol, Depends(get_storage_service)],
 ) -> CustomerService:
     """Build a request-scoped customer service wired to the DB session."""
     return CustomerService(
@@ -178,7 +188,7 @@ def get_line_item_catalog_service(
 
 def get_quote_service(
     db: Annotated[AsyncSession, Depends(get_db)],
-    storage_service: Annotated[StorageService, Depends(get_storage_service)],
+    storage_service: Annotated[StorageServiceProtocol, Depends(get_storage_service)],
 ) -> QuoteService:
     """Build a request-scoped quote service wired to DB and PDF integration."""
     return QuoteService(
@@ -197,7 +207,7 @@ def get_job_service(
 
 def get_invoice_service(
     db: Annotated[AsyncSession, Depends(get_db)],
-    storage_service: Annotated[StorageService, Depends(get_storage_service)],
+    storage_service: Annotated[StorageServiceProtocol, Depends(get_storage_service)],
 ) -> InvoiceService:
     """Build a request-scoped invoice service wired to DB and PDF integration."""
     return InvoiceService(
@@ -210,7 +220,7 @@ def get_invoice_service(
 
 def get_quote_email_delivery_service(
     db: Annotated[AsyncSession, Depends(get_db)],
-    storage_service: Annotated[StorageService, Depends(get_storage_service)],
+    storage_service: Annotated[StorageServiceProtocol, Depends(get_storage_service)],
     email_service: Annotated[EmailService, Depends(get_email_service)],
 ) -> QuoteEmailDeliveryService:
     """Build a request-scoped quote email delivery service."""
@@ -231,7 +241,7 @@ def get_quote_email_delivery_service(
 
 def get_invoice_email_delivery_service(
     db: Annotated[AsyncSession, Depends(get_db)],
-    storage_service: Annotated[StorageService, Depends(get_storage_service)],
+    storage_service: Annotated[StorageServiceProtocol, Depends(get_storage_service)],
     email_service: Annotated[EmailService, Depends(get_email_service)],
 ) -> InvoiceEmailDeliveryService:
     """Build a request-scoped invoice email delivery service."""
