@@ -72,8 +72,9 @@ process.
 
 ### Backend Environment
 
-Use this as the demo env contract. Values marked `replace` are secrets or hosts
-that must be generated for the actual deployment.
+Use this as the demo env contract. Values marked `replace` and the
+`*.stima.example` domains are placeholders that must be generated for the actual
+deployment.
 
 ```bash
 # Core runtime
@@ -88,7 +89,7 @@ PORT=8000
 # Frontend/API origin, host, and cookie contract for shared custom domains.
 FRONTEND_URL=https://demo.stima.example
 ALLOWED_ORIGINS=https://demo.stima.example
-ALLOWED_HOSTS=demo-api.stima.example,stima-demo-api.onrender.com
+ALLOWED_HOSTS=demo-api.stima.example,replace-render-service.onrender.com
 COOKIE_SECURE=true
 COOKIE_HTTPONLY=true
 COOKIE_SAMESITE=lax
