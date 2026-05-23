@@ -25,6 +25,7 @@ Use this index to keep template docs easy to traverse.
 - `REVIEW_CHECKLIST.md` — PR review checklist
 - `CODE_COMMENTING_CONTRACT.md` — in-code comment and docstring standards
 - `DEFERRED.md` — intentionally deferred technical debt items
+- `runbooks/demo-deployment.md` — demo deployment contract for Vercel, Render Free, and Neon Free
 - `telemetry/PILOT_FUNNEL_VISIBILITY.md` — founder telemetry query guide and privacy-safe usage notes
 - `telemetry/pilot-funnel-queries.sql` — read-only SQL queries for pilot funnel visibility
 
