@@ -132,7 +132,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     )
     app.state.stale_job_reaper_task = stale_job_reaper_task
-    if runtime_state.mode == "redis":
+    if runtime_state.mode == "redis" and settings.job_execution_mode == "queue":
         try:
             arq_pool = await create_pool(build_arq_redis_settings(settings))
         except Exception:

@@ -128,6 +128,11 @@ class JobRepository:
             )
         )
 
+    async def refresh(self, record: JobRecord) -> JobRecord:
+        """Reload one already-loaded job record from the database."""
+        await self._session.refresh(record)
+        return record
+
     async def set_running(
         self,
         job_id: UUID,

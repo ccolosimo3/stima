@@ -72,6 +72,7 @@ from app.shared.dependencies import (
     get_current_user,
     get_extraction_service,
     get_idempotency_store,
+    get_inline_job_runner,
     get_invoice_service,
     get_job_service,
     get_quote_email_delivery_service,
@@ -89,6 +90,7 @@ from app.shared.input_limits import (
 from app.shared.observability import current_correlation_id, log_security_event
 from app.shared.pdf_artifacts import resolve_pdf_artifact_state
 from app.shared.rate_limit import get_ip_key, get_user_key, limiter
+from app.worker.inline import InlineJobRunner
 from app.worker.job_registry import EMAIL_JOB_NAME, EXTRACTION_JOB_NAME
 
 router = APIRouter(prefix="/quotes", tags=["quotes"])
@@ -754,15 +756,19 @@ async def generate_quote_pdf(
     quote_service: Annotated[QuoteService, Depends(get_quote_service)],
     arq_pool: Annotated[ArqRedis | None, Depends(get_arq_pool)],
     job_service: Annotated[JobService, Depends(get_job_service)],
+    inline_job_runner: Annotated[InlineJobRunner, Depends(get_inline_job_runner)],
 ) -> JobRecordResponse:
     """Start or reuse one durable quote PDF generation job."""
     del request
+    settings = get_settings()
     try:
         job = await quote_service.start_pdf_generation(
             user,
             quote_id,
             job_service=job_service,
             arq_pool=arq_pool,
+            job_execution_mode=settings.job_execution_mode,
+            inline_job_runner=inline_job_runner,
         )
     except QuoteServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -848,11 +854,13 @@ async def send_quote_email(
     db: Annotated[AsyncSession, Depends(get_db)],
     arq_pool: Annotated[ArqRedis | None, Depends(get_arq_pool)],
     job_service: Annotated[JobService, Depends(get_job_service)],
+    inline_job_runner: Annotated[InlineJobRunner, Depends(get_inline_job_runner)],
     idempotency_store: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> JobRecordResponse:
     """Send a quote email to the customer contact on file."""
     del request
+    settings = get_settings()
     try:
         normalized_idempotency_key = validate_idempotency_key(idempotency_key)
     except ValueError as exc:
@@ -924,6 +932,42 @@ async def send_quote_email(
         job_type=JobType.EMAIL,
         document_id=quote_id,
     )
+    if settings.job_execution_mode == "inline":
+        await db.commit()
+        await inline_job_runner.run(EMAIL_JOB_NAME, job.id)
+        await job_service.refresh_job(job)
+        job_response = job_record_to_response(job)
+        response.status_code = status.HTTP_202_ACCEPTED
+        if job.status == JobStatus.SUCCESS:
+            try:
+                await idempotency_store.complete(
+                    endpoint_slug="quote-send-email",
+                    user_id=user.id,
+                    resource_id=quote_id,
+                    idempotency_key=normalized_idempotency_key,
+                    status_code=status.HTTP_202_ACCEPTED,
+                    payload=job_response.model_dump(mode="json"),
+                )
+            except Exception:  # pragma: no cover - degraded Redis persistence path
+                LOGGER.warning(
+                    "quote email job completed without persisted idempotency replay state",
+                    extra={"quote_id": str(quote_id), "user_id": str(user.id)},
+                )
+        else:
+            try:
+                await idempotency_store.abort(
+                    endpoint_slug="quote-send-email",
+                    user_id=user.id,
+                    resource_id=quote_id,
+                    idempotency_key=normalized_idempotency_key,
+                )
+            except Exception:  # pragma: no cover - degraded Redis persistence path
+                LOGGER.warning(
+                    "quote email idempotency abort failed after inline terminal failure",
+                    extra={"quote_id": str(quote_id), "user_id": str(user.id)},
+                )
+        return job_response
+
     if arq_pool is None:
         await job_service.mark_enqueue_failed(job.id, job_type=JobType.EMAIL)
         await db.commit()

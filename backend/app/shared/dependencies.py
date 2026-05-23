@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import cache, lru_cache
 from hmac import compare_digest
-from typing import Annotated, cast
+from typing import TYPE_CHECKING, Annotated, cast
 from uuid import UUID
 
 from arq.connections import ArqRedis
@@ -52,6 +52,9 @@ from app.shared.rate_limit import (
     extraction_controls,
     reserve_extraction_capacity,
 )
+
+if TYPE_CHECKING:
+    from app.worker.inline import InlineJobRunner
 
 
 @lru_cache(maxsize=1)
@@ -287,6 +290,13 @@ def get_support_contact_service(
 def get_arq_pool(request: Request) -> ArqRedis | None:
     """Return the app-scoped ARQ pool when Redis-backed jobs are enabled."""
     return cast(ArqRedis | None, getattr(request.app.state, "arq_pool", None))
+
+
+def get_inline_job_runner() -> InlineJobRunner:
+    """Return a web-safe inline durable job runner."""
+    from app.worker.inline import InlineJobRunner
+
+    return InlineJobRunner()
 
 
 async def get_current_user(

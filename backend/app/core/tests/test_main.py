@@ -25,6 +25,7 @@ def _required_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.delenv("TRUSTED_PROXY_IPS", raising=False)
     monkeypatch.delenv("ENVIRONMENT", raising=False)
     monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("JOB_EXECUTION_MODE", raising=False)
     monkeypatch.delenv("COOKIE_SECURE", raising=False)
     monkeypatch.delenv("FRONTEND_URL", raising=False)
     monkeypatch.delenv("ALLOW_REDIS_DEGRADED_MODE", raising=False)
@@ -245,6 +246,29 @@ async def test_app_lifespan_degrades_when_arq_pool_startup_fails(
         assert app.state.arq_pool is None
         assert app.state.redis_runtime_mode == "degraded_memory"
         assert app.state.queue_available is False
+
+
+@pytest.mark.asyncio
+async def test_app_lifespan_inline_job_mode_skips_arq_pool_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    create_pool = AsyncMock()
+    monkeypatch.setenv("JOB_EXECUTION_MODE", "inline")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        "app.main.resolve_redis_runtime_state",
+        AsyncMock(return_value=RedisRuntimeState(mode="redis")),
+    )
+    monkeypatch.setattr("app.main.create_pool", create_pool)
+
+    app = create_app()
+
+    async with app.router.lifespan_context(app):
+        assert app.state.arq_pool is None
+        assert app.state.queue_available is False
+
+    create_pool.assert_not_awaited()
 
 
 @pytest.mark.asyncio

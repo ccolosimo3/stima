@@ -7,10 +7,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.features.event_logs.models import EventLog
+from app.features.jobs.models import JobRecord, JobStatus
 from app.features.quotes.models import QuoteStatus
 from app.features.quotes.repository import QuoteRepository
 from app.features.quotes.tests import test_quotes as quotes_test_module
@@ -34,7 +35,8 @@ from app.features.quotes.tests.support.mocks import (
 )
 from app.main import app
 from app.shared import event_logger, observability
-from app.shared.dependencies import get_idempotency_store
+from app.shared.dependencies import get_idempotency_store, get_inline_job_runner
+from app.worker.inline import InlineJobRunner
 
 pytestmark = pytest.mark.asyncio
 
@@ -137,6 +139,94 @@ async def test_send_quote_email_replays_same_idempotency_key_without_second_send
     assert second_response.headers["Idempotency-Replayed"] == "true"
     assert second_payload == first_payload
     assert len(mock_email_service.messages) == 0
+
+
+async def test_send_quote_email_inline_completes_after_success_and_replays_without_resend(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_email_service: _MockEmailService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JOB_EXECUTION_MODE", "inline")
+    get_settings.cache_clear()
+    _install_inline_email_runner(db_session, email_service=mock_email_service)
+    app.state.arq_pool = None
+    try:
+        csrf_token = await _register_and_login(client, _credentials())
+        await _set_profile_for_email_delivery(client, csrf_token)
+        customer_id = await _create_customer(client, csrf_token, email="customer@example.com")
+        quote = await _create_quote(client, csrf_token, customer_id)
+        await _set_quote_status(db_session, quote["id"], QuoteStatus.READY)
+
+        first_response = await client.post(
+            f"/api/quotes/{quote['id']}/send-email",
+            headers=_send_email_headers(csrf_token, idempotency_key="quote-inline-replay"),
+        )
+        second_response = await client.post(
+            f"/api/quotes/{quote['id']}/send-email",
+            headers=_send_email_headers(csrf_token, idempotency_key="quote-inline-replay"),
+        )
+    finally:
+        app.dependency_overrides.pop(get_inline_job_runner, None)
+        get_settings.cache_clear()
+
+    first_payload = first_response.json()
+    second_payload = second_response.json()
+    assert first_response.status_code == 202
+    assert first_payload["status"] == JobStatus.SUCCESS.value
+    assert first_payload["attempts"] == 1
+    assert first_payload["terminal_error"] is None
+    assert second_response.headers["Idempotency-Replayed"] == "true"
+    assert second_payload == first_payload
+    assert len(mock_email_service.messages) == 1
+    assert app.state.arq_pool is None
+
+
+async def test_send_quote_email_inline_failure_aborts_idempotency_for_retry(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_email_service: _MockEmailService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JOB_EXECUTION_MODE", "inline")
+    get_settings.cache_clear()
+    _install_inline_email_runner(db_session, email_service=mock_email_service)
+    app.state.arq_pool = None
+    try:
+        csrf_token = await _register_and_login(client, _credentials())
+        await _set_profile_for_email_delivery(client, csrf_token)
+        customer_id = await _create_customer(client, csrf_token, email="customer@example.com")
+        quote = await _create_quote(client, csrf_token, customer_id)
+        await _set_quote_status(db_session, quote["id"], QuoteStatus.READY)
+        mock_email_service.raise_send_error = True
+
+        first_response = await client.post(
+            f"/api/quotes/{quote['id']}/send-email",
+            headers=_send_email_headers(csrf_token, idempotency_key="quote-inline-retry"),
+        )
+        mock_email_service.raise_send_error = False
+        second_response = await client.post(
+            f"/api/quotes/{quote['id']}/send-email",
+            headers=_send_email_headers(csrf_token, idempotency_key="quote-inline-retry"),
+        )
+    finally:
+        app.dependency_overrides.pop(get_inline_job_runner, None)
+        get_settings.cache_clear()
+
+    first_payload = first_response.json()
+    second_payload = second_response.json()
+    assert first_response.status_code == 202
+    assert first_payload["status"] == JobStatus.TERMINAL.value
+    assert first_payload["attempts"] == 1
+    assert first_payload["terminal_error"] is None
+    persisted_job = await db_session.get(JobRecord, UUID(first_payload["id"]))
+    assert persisted_job is not None
+    assert persisted_job.terminal_error == "retry_exhausted"
+    assert second_response.status_code == 202
+    assert second_payload["status"] == JobStatus.SUCCESS.value
+    assert second_payload["id"] != first_payload["id"]
+    assert len(mock_email_service.messages) == 1
+    assert app.state.arq_pool is None
 
 
 async def test_send_quote_email_idempotency_replay_emits_structured_log(
@@ -771,3 +861,19 @@ async def test_send_email_rejects_same_idempotency_key_for_different_resource_fi
         "detail": "Idempotency key was already used for a different request.",
     }
     assert len(mock_email_service.messages) == 0
+
+
+def _install_inline_email_runner(
+    db_session: AsyncSession,
+    *,
+    email_service: _MockEmailService,
+) -> None:
+    session_maker = async_sessionmaker(
+        bind=db_session.bind,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    app.dependency_overrides[get_inline_job_runner] = lambda: InlineJobRunner(
+        session_maker=session_maker,
+        email_service=email_service,
+    )

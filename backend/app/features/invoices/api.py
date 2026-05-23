@@ -35,6 +35,7 @@ from app.shared.dependencies import (
     get_arq_pool,
     get_current_user,
     get_idempotency_store,
+    get_inline_job_runner,
     get_invoice_email_delivery_service,
     get_invoice_service,
     get_job_service,
@@ -45,6 +46,7 @@ from app.shared.observability import log_security_event
 from app.shared.pdf_artifacts import resolve_pdf_artifact_state
 from app.shared.pricing import DiscountType
 from app.shared.rate_limit import get_user_key, limiter
+from app.worker.inline import InlineJobRunner
 from app.worker.job_registry import EMAIL_JOB_NAME
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
@@ -247,15 +249,19 @@ async def generate_invoice_pdf(
     invoice_service: Annotated[InvoiceService, Depends(get_invoice_service)],
     arq_pool: Annotated[ArqRedis | None, Depends(get_arq_pool)],
     job_service: Annotated[JobService, Depends(get_job_service)],
+    inline_job_runner: Annotated[InlineJobRunner, Depends(get_inline_job_runner)],
 ) -> JobRecordResponse:
     """Start or reuse one durable invoice PDF generation job."""
     del request
+    settings = get_settings()
     try:
         job = await invoice_service.start_pdf_generation(
             user,
             invoice_id,
             job_service=job_service,
             arq_pool=arq_pool,
+            job_execution_mode=settings.job_execution_mode,
+            inline_job_runner=inline_job_runner,
         )
     except QuoteServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -346,11 +352,13 @@ async def send_invoice_email(
     db: Annotated[AsyncSession, Depends(get_db)],
     arq_pool: Annotated[ArqRedis | None, Depends(get_arq_pool)],
     job_service: Annotated[JobService, Depends(get_job_service)],
+    inline_job_runner: Annotated[InlineJobRunner, Depends(get_inline_job_runner)],
     idempotency_store: Annotated[IdempotencyStore, Depends(get_idempotency_store)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> JobRecordResponse:
     """Send an invoice email to the customer contact on file."""
     del request
+    settings = get_settings()
     try:
         normalized_idempotency_key = validate_idempotency_key(idempotency_key)
     except ValueError as exc:
@@ -422,6 +430,42 @@ async def send_invoice_email(
         job_type=JobType.EMAIL,
         document_id=invoice_id,
     )
+    if settings.job_execution_mode == "inline":
+        await db.commit()
+        await inline_job_runner.run(EMAIL_JOB_NAME, job.id)
+        await job_service.refresh_job(job)
+        job_response = job_record_to_response(job)
+        response.status_code = status.HTTP_202_ACCEPTED
+        if job.status == JobStatus.SUCCESS:
+            try:
+                await idempotency_store.complete(
+                    endpoint_slug="invoice-send-email",
+                    user_id=user.id,
+                    resource_id=invoice_id,
+                    idempotency_key=normalized_idempotency_key,
+                    status_code=status.HTTP_202_ACCEPTED,
+                    payload=job_response.model_dump(mode="json"),
+                )
+            except Exception:  # pragma: no cover - degraded Redis persistence path
+                LOGGER.warning(
+                    "invoice email job completed without persisted idempotency replay state",
+                    extra={"invoice_id": str(invoice_id), "user_id": str(user.id)},
+                )
+        else:
+            try:
+                await idempotency_store.abort(
+                    endpoint_slug="invoice-send-email",
+                    user_id=user.id,
+                    resource_id=invoice_id,
+                    idempotency_key=normalized_idempotency_key,
+                )
+            except Exception:  # pragma: no cover - degraded Redis persistence path
+                LOGGER.warning(
+                    "invoice email idempotency abort failed after inline terminal failure",
+                    extra={"invoice_id": str(invoice_id), "user_id": str(user.id)},
+                )
+        return job_response
+
     if arq_pool is None:
         await job_service.mark_enqueue_failed(job.id, job_type=JobType.EMAIL)
         await db.commit()
