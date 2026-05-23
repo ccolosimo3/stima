@@ -24,7 +24,7 @@ from app.features.auth.models import User
 from app.features.auth.service import CSRF_COOKIE_NAME
 from app.features.invoices.repository import InvoiceRepository
 from app.features.invoices.service import InvoiceService
-from app.features.jobs.models import JobStatus
+from app.features.jobs.models import JobRecord, JobStatus
 from app.features.quotes.models import Document, LineItem, QuoteStatus
 from app.features.quotes.repository import QuoteRenderContext, QuoteRepository
 from app.features.quotes.service import QuoteService
@@ -34,6 +34,7 @@ from app.main import app
 from app.shared import event_logger, observability
 from app.shared.dependencies import (
     get_arq_pool,
+    get_inline_job_runner,
     get_invoice_service,
     get_quote_service,
     get_storage_service,
@@ -41,6 +42,7 @@ from app.shared.dependencies import (
 from app.shared.input_limits import DOCUMENT_LINE_ITEMS_MAX_ITEMS
 from app.shared.pdf_artifacts import PDF_ARTIFACT_NOT_READY_DETAIL
 from app.shared.rate_limit import reset_local_rate_limit_state
+from app.worker.inline import InlineJobRunner
 from app.worker.job_registry import pdf_job
 from app.worker.runtime import (
     DEFAULT_MAX_TRIES,
@@ -109,6 +111,7 @@ class _PdfJobResponse(TypedDict):
 class _FakeStorageService:
     def __init__(self) -> None:
         self.fail_fetch = False
+        self.fail_upload = False
         self.objects: dict[str, bytes] = {}
 
     def upload(
@@ -120,6 +123,8 @@ class _FakeStorageService:
         content_type: str,
     ) -> str:
         del content_type
+        if self.fail_upload:
+            raise RuntimeError("storage unavailable")
         object_path = f"{prefix.strip('/')}/{filename.lstrip('/')}"
         self.objects[object_path] = data
         return object_path
@@ -254,6 +259,92 @@ async def test_generate_pdf_returns_pdf_and_sets_ready(
         "download_url": f"http://testserver/api/quotes/{quote['id']}/pdf",
         "terminal_error": None,
     }
+
+
+async def test_generate_quote_pdf_inline_runs_without_arq_and_returns_ready(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    _arq_pool_dependency: _MockArqPool,
+    _storage_service_dependency: _FakeStorageService,
+    _override_quote_service_dependency: _ConfigurablePdfIntegration,
+) -> None:
+    monkeypatch.setenv("JOB_EXECUTION_MODE", "inline")
+    get_settings.cache_clear()
+    _install_inline_pdf_runner(
+        db_session,
+        pdf_integration=_override_quote_service_dependency,
+        storage_service=_storage_service_dependency,
+    )
+    try:
+        csrf_token = await _register_and_login(client, _credentials())
+        customer_id = await _create_customer(client, csrf_token)
+        quote = await _create_quote(client, csrf_token, customer_id)
+
+        response = await client.post(
+            f"/api/quotes/{quote['id']}/pdf",
+            headers={"X-CSRF-Token": csrf_token},
+        )
+    finally:
+        app.dependency_overrides.pop(get_inline_job_runner, None)
+        get_settings.cache_clear()
+
+    payload = cast(_PdfJobResponse, response.json())
+    assert response.status_code == 202
+    assert payload["job_type"] == "pdf"
+    assert payload["status"] == JobStatus.SUCCESS.value
+    assert payload["document_id"] == quote["id"]
+    assert payload["attempts"] == 1
+    assert payload["terminal_error"] is None
+    assert _arq_pool_dependency.calls == []
+
+    artifact = await client.get(f"/api/quotes/{quote['id']}/pdf")
+    assert artifact.status_code == 200
+    assert artifact.content == b"PDF for Q-001"
+
+
+async def test_generate_quote_pdf_inline_storage_failure_records_terminal_job(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    _arq_pool_dependency: _MockArqPool,
+    _storage_service_dependency: _FakeStorageService,
+    _override_quote_service_dependency: _ConfigurablePdfIntegration,
+) -> None:
+    monkeypatch.setenv("JOB_EXECUTION_MODE", "inline")
+    get_settings.cache_clear()
+    _storage_service_dependency.fail_upload = True
+    _install_inline_pdf_runner(
+        db_session,
+        pdf_integration=_override_quote_service_dependency,
+        storage_service=_storage_service_dependency,
+    )
+    try:
+        csrf_token = await _register_and_login(client, _credentials())
+        customer_id = await _create_customer(client, csrf_token)
+        quote = await _create_quote(client, csrf_token, customer_id)
+
+        response = await client.post(
+            f"/api/quotes/{quote['id']}/pdf",
+            headers={"X-CSRF-Token": csrf_token},
+        )
+    finally:
+        app.dependency_overrides.pop(get_inline_job_runner, None)
+        get_settings.cache_clear()
+
+    payload = cast(_PdfJobResponse, response.json())
+    assert response.status_code == 202
+    assert payload["status"] == JobStatus.TERMINAL.value
+    assert payload["attempts"] == 1
+    assert payload["terminal_error"] is None
+    assert _arq_pool_dependency.calls == []
+    persisted_job = await db_session.get(JobRecord, UUID(payload["id"]))
+    assert persisted_job is not None
+    assert persisted_job.terminal_error == "retry_exhausted"
+
+    artifact = await client.get(f"/api/quotes/{quote['id']}/pdf")
+    assert artifact.status_code == 409
+    assert artifact.json() == {"detail": PDF_ARTIFACT_NOT_READY_DETAIL}
 
 
 async def test_generate_pdf_includes_logo_data_uri_when_logo_exists(
@@ -2551,6 +2642,24 @@ def _assert_async_pdf_job_response(response, *, document_id: str) -> _PdfJobResp
     assert payload["attempts"] == 0
     assert payload["terminal_error"] is None
     return payload
+
+
+def _install_inline_pdf_runner(
+    db_session: AsyncSession,
+    *,
+    pdf_integration: _ConfigurablePdfIntegration,
+    storage_service: _FakeStorageService,
+) -> None:
+    session_maker = async_sessionmaker(
+        bind=db_session.bind,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    app.dependency_overrides[get_inline_job_runner] = lambda: InlineJobRunner(
+        session_maker=session_maker,
+        pdf_integration=pdf_integration,
+        storage_service=storage_service,
+    )
 
 
 async def _generate_ready_quote_pdf(

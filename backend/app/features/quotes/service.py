@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from uuid import UUID
 
 from arq.connections import ArqRedis
@@ -43,6 +43,9 @@ from app.features.quotes.schemas import (
 )
 from app.features.quotes.share import QuoteShareService
 from app.integrations.storage import StorageServiceProtocol
+
+if TYPE_CHECKING:
+    from app.worker.inline import InlineJobRunner
 
 LOGGER = logging.getLogger(__name__)
 _TERMINAL_QUOTE_STATUSES = frozenset({QuoteStatus.APPROVED, QuoteStatus.DECLINED})
@@ -503,6 +506,8 @@ class QuoteService:
         *,
         job_service: JobService,
         arq_pool: ArqRedis | None,
+        job_execution_mode: Literal["queue", "inline"],
+        inline_job_runner: InlineJobRunner,
     ) -> JobRecord:
         """Create or reuse a durable quote PDF job for the current artifact revision."""
         user_id = _resolve_user_id(user)
@@ -511,6 +516,8 @@ class QuoteService:
             quote_id=quote_id,
             job_service=job_service,
             arq_pool=arq_pool,
+            job_execution_mode=job_execution_mode,
+            inline_job_runner=inline_job_runner,
         )
 
     async def get_pdf_artifact(self, user: User, quote_id: UUID) -> tuple[str, bytes]:

@@ -57,6 +57,10 @@ class JobService:
         """Return one durable job record when the caller owns it."""
         return await self.repository.get_by_id_for_user(job_id, user_id)
 
+    async def refresh_job(self, job: JobRecord) -> JobRecord:
+        """Reload one job record before serializing it to callers."""
+        return await self.repository.refresh(job)
+
     async def mark_enqueue_failed(self, job_id: UUID, *, job_type: JobType) -> JobRecord:
         """Finalize a newly created pending job when queue submission fails."""
         return await self.repository.set_terminal(

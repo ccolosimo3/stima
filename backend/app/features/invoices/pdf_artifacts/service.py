@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 from uuid import UUID
 
 from arq.connections import ArqRedis
@@ -15,6 +15,9 @@ from app.features.quotes.errors import QuoteServiceError
 from app.features.quotes.models import Document
 from app.integrations.storage import StorageNotFoundError, StorageServiceProtocol
 from app.shared.pdf_artifacts import PDF_ARTIFACT_NOT_READY_DETAIL
+
+if TYPE_CHECKING:
+    from app.worker.inline import InlineJobRunner
 
 LOGGER = logging.getLogger(__name__)
 _PDF_JOB_NAME = "jobs.pdf"
@@ -48,6 +51,8 @@ class InvoicePdfArtifactService:
         invoice_id: UUID,
         job_service: JobService,
         arq_pool: ArqRedis | None,
+        job_execution_mode: Literal["queue", "inline"],
+        inline_job_runner: InlineJobRunner,
     ) -> JobRecord:
         """Create or reuse a durable invoice PDF job for the current artifact revision."""
         invoice = await self._repository.get_by_id(invoice_id, user_id)
@@ -71,6 +76,11 @@ class InvoicePdfArtifactService:
         )
         if attach_job_to_document:
             invoice.pdf_artifact_job_id = job.id
+
+        if job_execution_mode == "inline":
+            await self._repository.commit()
+            await inline_job_runner.run(_PDF_JOB_NAME, job.id)
+            return await job_service.refresh_job(job)
 
         try:
             if arq_pool is None:

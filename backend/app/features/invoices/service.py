@@ -9,7 +9,7 @@ list/detail access intentionally remains on the facade.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 from uuid import UUID
 
 from arq.connections import ArqRedis
@@ -41,6 +41,9 @@ from app.features.quotes.repository import QuoteRenderContext
 from app.features.quotes.schemas import BulkActionAppliedItem, BulkActionBlockedItem, LineItemDraft
 from app.features.quotes.service import QuoteRepositoryProtocol, QuoteServiceError
 from app.integrations.storage import StorageServiceProtocol
+
+if TYPE_CHECKING:
+    from app.worker.inline import InlineJobRunner
 
 _INVOICE_DOC_TYPE = "invoice"
 
@@ -378,6 +381,8 @@ class InvoiceService:
         *,
         job_service: JobService,
         arq_pool: ArqRedis | None,
+        job_execution_mode: Literal["queue", "inline"],
+        inline_job_runner: InlineJobRunner,
     ) -> JobRecord:
         """Create or reuse a durable invoice PDF job for the current artifact revision."""
         return await self._pdf_artifact_service.start_pdf_generation(
@@ -385,6 +390,8 @@ class InvoiceService:
             invoice_id=invoice_id,
             job_service=job_service,
             arq_pool=arq_pool,
+            job_execution_mode=job_execution_mode,
+            inline_job_runner=inline_job_runner,
         )
 
     async def get_pdf_artifact(self, user: User, invoice_id: UUID) -> tuple[str, bytes]:
