@@ -61,7 +61,7 @@ What are we building and why?
 
 ## Verification
 ```bash
-cd backend && ruff check . && mypy . && bandit -r app/ && pytest && cd ../frontend && npx tsc --noEmit && npx eslint src/ && npx vitest run && npm run build
+make verify
 ```
 
 ## Notes
