@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:stima_mobile/app/stima_app.dart';
 
 void main() {
-  testWidgets('shows the Stima Capture shell on a narrow phone', (
+  testWidgets('opens the synthetic Capture preview on a narrow phone', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -15,7 +15,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Stima').hitTestable(), findsOneWidget);
-    expect(find.text('Capture').hitTestable(), findsOneWidget);
+    expect(find.text('Capture Job Notes').hitTestable(), findsOneWidget);
+    expect(
+      find.textContaining('UI preview · synthetic data').hitTestable(),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 }

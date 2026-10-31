@@ -1,7 +1,39 @@
 # Stima mobile
 
-Development foundation for Android and iOS. The app opens an empty Capture shell;
-recording, accounts, storage, and API access are later work.
+Development client for Android and iOS. The app opens a clearly labeled synthetic
+Capture preview using the real presentation widgets. Recording, accounts, storage,
+and API access remain later work.
+
+## Capture UI preview
+
+Run the app with the commands below. The top **Preview state** control loads
+empty/notes/clips, starting/recording, local-save feedback, microphone/interruption,
+and Extraction states. The theme control switches dark/light for this run only;
+dark is the initial appearance. Exact brand fonts and stored theme preferences
+are not bundled yet.
+
+Notes and clip deletion change in-memory fixture data. Start/Stop, Back, Start
+blank and Extract display request feedback; they do not use a microphone, save
+files, create documents, navigate to unbuilt screens or contact a server. Extract
+locks the supplied input; selecting **Extraction error** keeps the same notes and
+clips and restores editing. The interruption state reflects the first-version
+stop-and-preserve direction without claiming that this preview saved audio.
+
+`CaptureScreen` receives `CaptureViewData` and callbacks. The caller owns all
+operational state; the screen owns only native text editing. The notes ceiling
+matches the web's 50,000 UTF-16 code units. IME composition can finish before an
+over-limit committed edit is rejected; only accepted committed text reaches the
+caller. No Unicode string is truncated to enforce that limit.
+
+Focused presentation tests, from `mobile/`:
+
+```text
+flutter test test/features/capture/capture_screen_test.dart
+```
+
+Widget/platform-override renders do not prove physical Android/iPhone keyboard,
+permission, back/edge-swipe, interruption or save/restart behavior. Those checks
+remain with functional capture and the iPhone build route described below.
 
 ## Prerequisites
 
