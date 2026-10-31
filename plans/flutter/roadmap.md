@@ -9,7 +9,7 @@ GitHub Tasks own acceptance and linked PRs own execution status. [The shared sou
 | Boundary | Observable result | Dependency and parallel work |
 | --- | --- | --- |
 | Foundation | A reproducible Flutter build and reusable Capture presentation | Foundation #723 and presentation #724; web audio integrity #725 and HTTP oracle #728 remain independently useful. |
-| Real local Capture | Enter notes, record/play/delete clips, safely stop on interruption, then reopen the same saved work | One current device-local Capture. Recorder/storage core precedes its thin UI binding within one end-to-end Task; authors hand off serially. Auth and backend calls are excluded. |
+| Real local Capture | Enter notes, record/play/delete clips, safely stop on interruption, then reopen the same saved work | [Task #745](https://github.com/ccolosimo3/stima/issues/745): one current device-local Capture. Recorder/storage core precedes its thin UI binding; authors hand off serially. Auth and backend calls are excluded. |
 | Native authentication and Extraction | Sign in, submit one saved Capture with a stable retry identity, observe its Job and recover the resulting Quote Draft | Select the additive native credential contract without weakening browser cookies/CSRF. Prove actual native multipart/codec behavior before joining the backend journey. |
 | Quote Review and delivery | Edit the Quote Draft, explicitly confirm, generate a server document and share its existing public link | Reuse server money, document, share and revision semantics. Cover ordinary failure and restart at the actual integrated boundary. |
 | Portfolio breadth | Customers/history, reuse/catalog, onboarding/profile and invoice conversion where the core journey needs them | Choose independent vertical journeys after the first complete quote flow works; do not translate every old screen first. |
@@ -55,7 +55,7 @@ Use the project's Flutter/Dart pin and locked dependencies. Reuse evidence only 
 - The main lead owns roadmap, backlog dispositions, dependencies and integration.
 - The mobile lead owns recorder/storage architecture and native core; the design lead owns the subsequent real UI binding. One writer owns the shared Task checkout at a time.
 - The verification lead owns #740 and selected verification work, isolated from the mobile source.
-- The Mac lead owns source-identical iOS build/device observations and platform prerequisites. Windows and Mac exchange exact published commit IDs through the shared handoff, using separate owned worktrees.
+- The Mac lead owns iOS-specific diagnostic code, proposed native fixes, iPhone observations and platform prerequisites in [Task #748](https://github.com/ccolosimo3/stima/issues/748). Platform patches return for shared Flutter/Android regression verification and integration. Windows and Mac exchange plans, findings and exact published commit IDs through Task issues and the shared handoff, using separate owned branches/worktrees.
 - A branch push, source review or preview deployment does not establish a main merge, physical-device pass or release.
 
 Both physical platforms are targets. Early iPhone work uses the owned Mac and free Personal Team signing; personal Stima ownership stays separate from the company Apple team. Device debugger/hot reload and physical input observations must be reported as actually observed, not inferred from successful installation.
