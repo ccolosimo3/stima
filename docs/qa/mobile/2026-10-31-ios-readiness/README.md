@@ -48,9 +48,9 @@ xcrun simctl launch "$SIMULATOR_ID" com.example.stimaMobile
 Version and lockfile checks passed. The first simulator build passed in 168.2
 seconds (147.6 seconds reported by Xcode); installation and launch succeeded.
 Native simulator interaction exercised note editing, the light/dark theme switch,
-and the synthetic Extraction busy/error states. Busy removed editing controls
-and disabled Extract; error retained the supplied notes/clips and restored editing
-controls. A software-keyboard inset was not qualified by these observations.
+and the synthetic Extraction busy/error states. Busy made notes read-only and
+disabled deletion and Extract; error retained the supplied notes/clips and
+restored editability. A software-keyboard inset was not qualified by these observations.
 
 ```sh
 xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Debug \
