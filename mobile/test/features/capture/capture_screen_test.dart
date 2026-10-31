@@ -161,6 +161,60 @@ void main() {
   );
 
   testWidgets(
+    'valid IME composition commits unchanged text to the caller and enables Extract',
+    (tester) async {
+      await tester.pumpWidget(_preview(CapturePreviewScenario.empty));
+      await tester.showKeyboard(find.byType(TextField));
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Mulch',
+          selection: TextSelection.collapsed(offset: 5),
+          composing: TextRange(start: 0, end: 5),
+        ),
+      );
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Mulch',
+          selection: TextSelection.collapsed(offset: 5),
+        ),
+      );
+      await tester.pump();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Mulch',
+      );
+      await _tap(
+        tester,
+        find.widgetWithText(FilledButton, 'Extract Line Items'),
+      );
+      expect(
+        find.textContaining('Extract requested. No data was sent.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'caller-loaded notes replace editing state without emitting a user edit',
+    (tester) async {
+      await tester.pumpWidget(_preview(CapturePreviewScenario.populated));
+      await _choose(tester, 'Empty');
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        isEmpty,
+      );
+      await _choose(tester, 'Notes only');
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        contains('Spread 5 yards'),
+      );
+      expect(find.textContaining('Edited in this preview.'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'the notes field preserves accepted Unicode and rejects an edit above 50000 UTF-16 units',
     (tester) async {
       await tester.pumpWidget(_preview(CapturePreviewScenario.empty));

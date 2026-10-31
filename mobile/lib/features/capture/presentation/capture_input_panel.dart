@@ -10,7 +10,6 @@ class CaptureInputPanel extends StatelessWidget {
     required this.data,
     required this.notesController,
     required this.notesFormatter,
-    required this.onNotesChanged,
     required this.onDeleteClip,
     required this.onStartRecording,
     required this.onStopRecording,
@@ -20,7 +19,6 @@ class CaptureInputPanel extends StatelessWidget {
   final CaptureViewData data;
   final TextEditingController notesController;
   final CaptureNotesFormatter notesFormatter;
-  final ValueChanged<String> onNotesChanged;
   final ValueChanged<String> onDeleteClip;
   final VoidCallback onStartRecording;
   final VoidCallback onStopRecording;
@@ -113,11 +111,6 @@ class CaptureInputPanel extends StatelessWidget {
                     alignLabelWithHint: true,
                   ),
                   inputFormatters: [notesFormatter],
-                  onChanged: (notes) {
-                    if (notesController.value.composing.isCollapsed) {
-                      onNotesChanged(notes);
-                    }
-                  },
                 ),
                 TextButton(
                   onPressed: data.canStartBlank && !data.inputLocked

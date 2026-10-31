@@ -37,29 +37,51 @@ class CaptureScreen extends StatefulWidget {
 class _CaptureScreenState extends State<CaptureScreen> {
   late final _notesController = TextEditingController(text: widget.data.notes);
   late final _notesFormatter = CaptureNotesFormatter(widget.data.notes);
+  late String _reportedNotes = widget.data.notes;
+
+  @override
+  void initState() {
+    super.initState();
+    _notesController.addListener(_publishCommittedNotes);
+  }
+
+  void _publishCommittedNotes() {
+    final value = _notesController.value;
+    // onChanged omits composition-only commits; the editing value observes them.
+    if (!widget.data.inputLocked &&
+        value.composing.isCollapsed &&
+        value.text != _reportedNotes) {
+      _reportedNotes = value.text;
+      widget.onNotesChanged(value.text);
+    }
+  }
 
   @override
   void didUpdateWidget(CaptureScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.data.notes != widget.data.notes &&
-        _notesController.text != widget.data.notes) {
-      final offset = math.max(
-        0,
-        math.min(
-          _notesController.selection.extentOffset,
-          widget.data.notes.length,
-        ),
-      );
-      _notesController.value = TextEditingValue(
-        text: widget.data.notes,
-        selection: TextSelection.collapsed(offset: offset),
-      );
+    if (oldWidget.data.notes != widget.data.notes) {
+      // Caller replacements are not user edits and must not echo during build.
+      _reportedNotes = widget.data.notes;
       _notesFormatter.reset(widget.data.notes);
+      if (_notesController.text != widget.data.notes) {
+        final offset = math.max(
+          0,
+          math.min(
+            _notesController.selection.extentOffset,
+            widget.data.notes.length,
+          ),
+        );
+        _notesController.value = TextEditingValue(
+          text: widget.data.notes,
+          selection: TextSelection.collapsed(offset: offset),
+        );
+      }
     }
   }
 
   @override
   void dispose() {
+    _notesController.removeListener(_publishCommittedNotes);
     _notesController.dispose();
     super.dispose();
   }
@@ -98,7 +120,6 @@ class _CaptureScreenState extends State<CaptureScreen> {
           data: widget.data,
           notesController: _notesController,
           notesFormatter: _notesFormatter,
-          onNotesChanged: widget.onNotesChanged,
           onDeleteClip: widget.onDeleteClip,
           onStartRecording: widget.onStartRecording,
           onStopRecording: widget.onStopRecording,
