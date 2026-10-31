@@ -31,6 +31,21 @@ export interface VoiceClip {
   mimeType: string;
 }
 
+export interface UseVoiceCaptureResult {
+  clips: VoiceClip[];
+  clipIds: string[];
+  isHydrating: boolean;
+  elapsedSeconds: number;
+  error: string | null;
+  isRecording: boolean;
+  isSupported: boolean;
+  startRecording: (sessionIdOverride?: string | null) => Promise<void>;
+  stopRecording: () => void;
+  removeClip: (clipId: string) => void;
+  clearClips: () => void;
+  clearError: () => void;
+}
+
 export function canUseMediaRecorder(): boolean {
   if (typeof window === "undefined") {
     return false;
