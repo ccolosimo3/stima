@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:record/record.dart';
@@ -77,16 +79,38 @@ class NativeLocalCaptureAudio implements LocalCaptureAudio {
 
   @override
   Future<Duration> inspect(String path) async {
+    _trace(path, 'inspect-after-recorder-disposal');
     final player = AudioPlayer();
     try {
       await player.setSource(DeviceFileSource(path));
+      _trace(path, 'player-prepared');
       final duration = await player.getDuration();
       if (duration == null || duration <= Duration.zero) {
         throw StateError('Audio has no playable duration.');
       }
+      _trace(path, 'positive-duration', duration.inMilliseconds.toString());
       return duration;
+    } catch (error) {
+      _trace(path, 'player-error', error.toString());
+      rethrow;
     } finally {
       await player.dispose();
+    }
+  }
+
+  // Task748 only. Retain stage evidence before app termination, never voice data.
+  void _trace(String path, String stage, [String? detail]) {
+    try {
+      final event = jsonEncode({
+        'stage': stage,
+        'at': DateTime.now().toUtc().toIso8601String(),
+        'bytes': File(path).lengthSync(),
+        'detail': detail,
+      });
+      File('$path.task748-dart.jsonl')
+          .writeAsStringSync('$event\n', mode: FileMode.append, flush: true);
+    } catch (_) {
+      // Observation must not replace the production result.
     }
   }
 
