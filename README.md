@@ -98,6 +98,10 @@ Recent work has focused on making the app more trustworthy and practical in the 
 
 ## Notes
 
+- The new [Flutter mobile client](mobile/README.md) is an Android/iOS development
+  foundation with an empty Capture shell. Its pinned SDK, local verification,
+  Android launch commands, and iPhone build prerequisite are documented separately.
+
 - Local audio handling requires `ffmpeg`
 - Redis-backed controls support production-style rate limiting and async workflows
 - Extraction quality tooling exists for offline/manual evaluation of prompt and pipeline changes, but it is not part of the standard verification path.
