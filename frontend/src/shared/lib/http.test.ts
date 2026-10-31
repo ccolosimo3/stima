@@ -191,13 +191,15 @@ describe("http request helper", () => {
     });
 
     expect(blob.type).toBe("application/pdf");
-    // JSDOM's Blob is readable through its own realm's FileReader.
-    const contents = await new Promise<ArrayBuffer>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as ArrayBuffer);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsArrayBuffer(blob);
-    });
+    // Node's Blob has arrayBuffer(); JSDOM's Blob needs its own FileReader.
+    const contents = typeof blob.arrayBuffer === "function"
+      ? await blob.arrayBuffer()
+      : await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(blob);
+      });
     expect(new Uint8Array(contents)).toEqual(expectedBytes);
   });
 
