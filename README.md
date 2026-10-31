@@ -96,6 +96,10 @@ Current work adds a Flutter client for Android and iPhone while retaining the Re
    npm run dev
    ```
 
+### Verify frontend
+
+From the repository root, run `make frontend-verify`. It checks application and build/test configuration types, lint, tests, and the production/PWA build. See [verification guidance](docs/workflow/VERIFY.md) for the individual checks.
+
 ## Notes
 
 - The new [Flutter mobile client](mobile/README.md) is an Android/iOS development

@@ -195,7 +195,7 @@ A Task is done when:
 Use project commands:
 
 ```bash
-cd backend && ruff check . && mypy . && bandit -r app/ && pytest && cd ../frontend && npx tsc --noEmit && npx eslint src/ && npx vitest run && npm run build
+make verify
 ```
 
 Prefer repo-level verify entrypoints when available (for example: `make backend-verify`, `make frontend-verify`).

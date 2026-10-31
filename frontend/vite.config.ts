@@ -1,7 +1,11 @@
+// Owns the existing app build and test configuration without duplicating runtime options.
+// Build plugins and test options use their respective tools' types because their Vite APIs differ.
+// PWA generation and its virtual registration module stay with the existing plugin.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { defineConfig } from "vitest/config";
+import type { UserConfig as ViteUserConfig } from "vite";
+import type { UserConfig as VitestUserConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { visualizer } from "rollup-plugin-visualizer";
@@ -9,7 +13,7 @@ import { VitePWA } from "vite-plugin-pwa";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
+export default {
   plugins: [
     react(),
     tailwindcss(),
@@ -50,7 +54,6 @@ export default defineConfig({
     },
   },
   server: {
-    historyApiFallback: true,
     proxy: {
       "/api": {
         target: "http://localhost:8000",
@@ -67,4 +70,4 @@ export default defineConfig({
     setupFiles: ["./src/shared/tests/setup.ts"],
     globals: true,
   },
-});
+} satisfies ViteUserConfig & { test: VitestUserConfig["test"] };

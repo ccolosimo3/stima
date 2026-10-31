@@ -32,7 +32,8 @@ frontend-verify: ## Run frontend type checks, lint, tests, and build
 	@test -x frontend/node_modules/.bin/tsc || (echo "Missing frontend dependencies. Run: cd frontend && npm install" && exit 1)
 	@cd frontend && \
 		./node_modules/.bin/tsc --noEmit && \
-		./node_modules/.bin/eslint src/ && \
+		./node_modules/.bin/tsc --project tsconfig.node.json --noEmit && \
+		./node_modules/.bin/eslint src/ vite.config.ts && \
 		./node_modules/.bin/vitest run && \
 		npm run build
 

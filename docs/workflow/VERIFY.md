@@ -56,13 +56,24 @@ Contract rules:
 ### Full Verification
 
 ```bash
-cd backend && ruff check . && mypy . && bandit -r app/ && pytest && cd ../frontend && npx tsc --noEmit && npx eslint src/ && npx vitest run && npm run build
+make verify
 ```
 
 ### Frontend Verification
 
 ```bash
-cd frontend && npx tsc --noEmit && npx eslint src/ && npx vitest run && npm run build
+make frontend-verify
+```
+
+The frontend gate checks application code with `tsconfig.json`, then the actual Vite build and Vitest test options with `tsconfig.node.json`. The shared config uses each tool's own API types; ESLint checks `src/` and `vite.config.ts` with their browser and Node environments respectively.
+
+Both TypeScript projects use `skipLibCheck` for dependency declarations, including unused optional PWA tooling types. Application and configuration expressions still receive strict checking; this setting does not exclude invalid Vite, PWA or Vitest options.
+
+When running the constituent commands directly, preserve the gate's order and fail-fast behavior:
+
+```bash
+bash scripts/check_file_sizes.sh --scope frontend && \
+cd frontend && npx tsc --noEmit && npx tsc --project tsconfig.node.json --noEmit && npx eslint src/ vite.config.ts && npx vitest run && npm run build
 ```
 
 ### Mobile Verification
