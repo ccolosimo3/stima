@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'capture_screen.dart';
-import 'capture_view_data.dart';
+import 'package:stima_mobile/features/capture/presentation/capture_screen.dart';
+import 'package:stima_mobile/features/capture/presentation/capture_view_data.dart';
 
 enum CapturePreviewScenario {
   empty('Empty'),

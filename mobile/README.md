@@ -1,26 +1,40 @@
 # Stima mobile
 
-Development client for Android and iOS. The app opens a clearly labeled synthetic
-Capture preview using the real presentation widgets. Recording, accounts, storage,
-and API access remain later work.
+Development client for Android and iOS. The app opens one current device-local
+Capture with typed notes, audio recording, local playback and recovery. Sign-in,
+Extraction and document creation are not available yet. The app does not upload
+or synchronize Capture data.
 
-## Capture UI preview
+## Local Capture
 
-Run the app with the commands below. The top **Preview state** control loads
-empty/notes/clips, starting/recording, local-save feedback, microphone/interruption,
-and Extraction states. The theme control switches dark/light for this run only;
-dark is the initial appearance. Exact brand fonts and stored theme preferences
-are not bundled yet.
+Run the app with the commands below. Written notes autosave to app-private
+Application Support storage. **Start recording** requests microphone permission
+when needed; **Stop recording** finishes and saves the clip. Each saved clip has
+Play/Stop and Delete controls. There are at most five clips, each up to two
+minutes. Deleting a clip does not renumber the other clips.
 
-Notes and clip deletion change in-memory fixture data. Start/Stop, Back, Start
-blank and Extract display request feedback; they do not use a microphone, save
-files, create documents, navigate to unbuilt screens or contact a server. Extract
-locks the supplied input; selecting **Extraction error** keeps the same notes and
-clips and restores editing. The interruption state reflects the first-version
-stop-and-preserve direction without claiming that this preview saved audio.
+**Saved on this device** follows the local storage acknowledgement. Closing and
+reopening restores the same Capture. Locking or leaving the app stops recording
+safely rather than recording in the background; it does not resume automatically.
+An unfinished clip stays separately labeled until it can be finalized and saved.
+**Retry** checks retained audio or retries the failed save/delete. A failed
+playback does not remove the clip. Microphone denial leaves typed notes usable.
+
+Do not treat pending/error feedback as a saved acknowledgement. Latest unsaved
+notes remain in memory, but may be lost if the process is killed before a save
+succeeds. An incomplete native audio container may be unrecoverable; available
+bytes stay owned until explicit deletion. Device storage loss or uninstall can
+remove local data. OS/device backup policy is separate from app upload or sync.
+
+The theme control switches dark/light for this run only; dark is the initial
+appearance. Exact brand fonts and stored theme preferences are not bundled yet.
+Synthetic preview scenarios remain under `test/support/` for presentation tests;
+they are not part of the running app and do not prove native operations.
 
 `CaptureScreen` receives `CaptureViewData` and callbacks. The caller owns all
-operational state; the screen owns only native text editing. The notes ceiling
+operational state; the screen owns only native text editing. The page's single
+lifecycle observer flushes visible composition through that editing owner before
+forwarding the exact lifecycle state to the controller. The notes ceiling
 matches the web's 50,000 UTF-16 code units. IME composition can finish before an
 over-limit committed edit is rejected; only accepted committed text reaches the
 caller. No Unicode string is truncated to enforce that limit.
@@ -29,11 +43,14 @@ Focused presentation tests, from `mobile/`:
 
 ```text
 flutter test test/features/capture/capture_screen_test.dart
+flutter test test/features/capture/local_capture_page_test.dart
 ```
 
-Widget/platform-override renders do not prove physical Android/iPhone keyboard,
-permission, back/edge-swipe, interruption or save/restart behavior. Those checks
-remain with functional capture and the iPhone build route described below.
+Widget tests use the real controller and a real temporary file store with a
+bounded fake audio seam. They do not prove a codec, physical microphone,
+speaker output or native audio-session transitions. Device acceptance must cover
+permission grant/denial, record→play→record, lock/app switch, full-file decode,
+terminate/reopen and deletion/reopen on the exact candidate.
 
 ## Prerequisites
 
@@ -97,9 +114,8 @@ These are placeholders. Choose final store identities and release signing before
 distribution. Do not copy Android's underscore-containing identifier into iOS.
 Keep signing credentials and machine-local configuration out of source control.
 
-`ios/` contains generated source only. It has not been compiled, signed, or run
-on an iOS simulator or iPhone by this Windows foundation task. The platform lead
-and parent roadmap must obtain an authorized macOS/Xcode build route and
-development signing, then run this foundation on the user's iPhone **before
-accepting the first native capture journey**. Android emulator proof does not
-establish physical Android or iPhone behavior.
+Native iPhone proof requires the authorized macOS/Xcode route and development
+signing. A preview or disposable recorder probe does not establish the final
+controller/store/page behavior. The delivery lead retains exact-revision device
+evidence and remaining checks. Android emulator and iOS simulator observations
+do not establish physical Android or iPhone microphone/interruption behavior.

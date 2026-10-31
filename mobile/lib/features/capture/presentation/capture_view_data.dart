@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-enum CaptureRecordingPhase { idle, starting, recording }
+enum CaptureRecordingPhase { idle, starting, recording, finalizing }
 
 enum CaptureNoticeTone { information, warning, error }
 
@@ -10,11 +10,19 @@ class CaptureClip {
     required this.id,
     required this.number,
     required this.duration,
+    this.status,
+    this.canPlay = false,
+    this.canDelete = true,
+    this.playing = false,
   });
 
   final String id;
   final int number;
   final Duration duration;
+  final String? status;
+  final bool canPlay;
+  final bool canDelete;
+  final bool playing;
 }
 
 @immutable
@@ -34,6 +42,7 @@ class CaptureViewData {
   CaptureViewData({
     required this.notes,
     List<CaptureClip> clips = const [],
+    List<CaptureClip> pendingClips = const [],
     this.recordingPhase = CaptureRecordingPhase.idle,
     this.elapsed = Duration.zero,
     this.inputLocked = false,
@@ -41,12 +50,15 @@ class CaptureViewData {
     this.canExtract = false,
     this.canStartBlank = true,
     this.canDeleteClips = true,
+    this.canStopRecording = true,
     this.notice,
     this.microphoneNotice,
-  }) : clips = List.unmodifiable(clips);
+  }) : clips = List.unmodifiable(clips),
+       pendingClips = List.unmodifiable(pendingClips);
 
   final String notes;
   final List<CaptureClip> clips;
+  final List<CaptureClip> pendingClips;
   final CaptureRecordingPhase recordingPhase;
   final Duration elapsed;
   final bool inputLocked;
@@ -54,6 +66,7 @@ class CaptureViewData {
   final bool canExtract;
   final bool canStartBlank;
   final bool canDeleteClips;
+  final bool canStopRecording;
   final CaptureNotice? notice;
   final CaptureNotice? microphoneNotice;
 }

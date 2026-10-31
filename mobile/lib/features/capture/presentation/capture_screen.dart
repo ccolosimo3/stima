@@ -16,9 +16,12 @@ class CaptureScreen extends StatefulWidget {
     required this.onDeleteClip,
     required this.onStartRecording,
     required this.onStopRecording,
-    required this.onStartBlank,
-    required this.onExtract,
-    required this.onBack,
+    this.onStartBlank,
+    this.onExtract,
+    this.onBack,
+    this.onPlayClip,
+    this.onStopPlayback,
+    this.onRetry,
   });
 
   final CaptureViewData data;
@@ -26,18 +29,31 @@ class CaptureScreen extends StatefulWidget {
   final ValueChanged<String> onDeleteClip;
   final VoidCallback onStartRecording;
   final VoidCallback onStopRecording;
-  final VoidCallback onStartBlank;
-  final VoidCallback onExtract;
-  final VoidCallback onBack;
+  final VoidCallback? onStartBlank;
+  final VoidCallback? onExtract;
+  final VoidCallback? onBack;
+  final ValueChanged<String>? onPlayClip;
+  final VoidCallback? onStopPlayback;
+  final VoidCallback? onRetry;
 
   @override
-  State<CaptureScreen> createState() => _CaptureScreenState();
+  CaptureScreenState createState() => CaptureScreenState();
 }
 
-class _CaptureScreenState extends State<CaptureScreen> {
+class CaptureScreenState extends State<CaptureScreen> {
   late final _notesController = TextEditingController(text: widget.data.notes);
   late final _notesFormatter = CaptureNotesFormatter(widget.data.notes);
   late String _reportedNotes = widget.data.notes;
+
+  /// Commit visible composition through the same owner before lifecycle storage.
+  /// Invalid input restores the last accepted value; validation is not repeated.
+  void flushNotes() {
+    final committed = _notesController.value.copyWith(
+      composing: TextRange.empty,
+    );
+    _notesController.value = _notesFormatter.acceptCommittedValue(committed);
+    _publishCommittedNotes();
+  }
 
   @override
   void initState() {
@@ -99,11 +115,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
       padding: const EdgeInsets.fromLTRB(4, 4, 16, 8),
       child: Row(
         children: [
-          IconButton(
-            tooltip: 'Go back',
-            onPressed: widget.onBack,
-            icon: const BackButtonIcon(),
-          ),
+          if (widget.onBack != null)
+            IconButton(
+              tooltip: 'Go back',
+              onPressed: widget.onBack,
+              icon: const BackButtonIcon(),
+            )
+          else
+            const SizedBox(width: 12),
           Expanded(
             child: Text(
               'Capture Job Notes',
@@ -120,6 +139,14 @@ class _CaptureScreenState extends State<CaptureScreen> {
       children: [
         if (widget.data.notice case final notice?) ...[
           CaptureNoticeView(notice: notice),
+          if (widget.onRetry != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: widget.onRetry,
+                child: const Text('Retry'),
+              ),
+            ),
           const SizedBox(height: 16),
         ],
         CaptureInputPanel(
@@ -130,27 +157,32 @@ class _CaptureScreenState extends State<CaptureScreen> {
           onStartRecording: widget.onStartRecording,
           onStopRecording: widget.onStopRecording,
           onStartBlank: widget.onStartBlank,
+          onPlayClip: widget.onPlayClip,
+          onStopPlayback: widget.onStopPlayback,
         ),
       ],
     );
-    final footer = ColoredBox(
-      color: theme.colorScheme.surfaceContainerLow,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FilledButton(
-              onPressed: widget.data.canExtract && !widget.data.inputLocked
-                  ? widget.onExtract
-                  : null,
-              child: const Text('Extract Line Items'),
+    final footer = widget.onExtract == null
+        ? const SizedBox.shrink()
+        : ColoredBox(
+            color: theme.colorScheme.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FilledButton(
+                    onPressed:
+                        widget.data.canExtract && !widget.data.inputLocked
+                        ? widget.onExtract
+                        : null,
+                    child: const Text('Extract Line Items'),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
-    );
+          );
     return LayoutBuilder(
       builder: (context, constraints) {
         // Short windows need one scroll path, rather than competing fixed chrome.
