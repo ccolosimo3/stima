@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+/**
+ * Record and reload local audio metadata while blobs remain in IndexedDB.
+ * Unavailable saved references stay part of the extraction input; hydration is
+ * complete only for the current session, so a partial view cannot erase them.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteAllClipsForSession,
-  deleteAudioClip,
+  deleteOwnedAudioClip,
 } from "@/features/quotes/offline/audioRepository";
 import {
   canUseMediaRecorder,
@@ -14,39 +19,31 @@ import {
   MAX_VOICE_CLIPS_PER_CAPTURE,
   persistRecordedClip,
   resolvePreferredMimeType,
-  revokeClipUrl,
   STORAGE_SOFT_CAP_MESSAGE,
   stopStream,
 } from "@/features/quotes/hooks/useVoiceCapture.helpers";
-import type { VoiceClip } from "@/features/quotes/hooks/useVoiceCapture.helpers";
+import type { UseVoiceCaptureResult, VoiceClip } from "@/features/quotes/hooks/useVoiceCapture.helpers";
 import { perfMark, perfMeasure } from "@/shared/perf";
 export {
   MAX_VOICE_CLIP_DURATION_SECONDS,
   MAX_VOICE_CLIPS_PER_CAPTURE,
 } from "@/features/quotes/hooks/useVoiceCapture.helpers";
 export type { VoiceClip } from "@/features/quotes/hooks/useVoiceCapture.helpers";
-interface UseVoiceCaptureResult {
-  clips: VoiceClip[];
-  elapsedSeconds: number;
-  error: string | null;
-  isRecording: boolean;
-  isSupported: boolean;
-  startRecording: (sessionIdOverride?: string | null) => Promise<void>;
-  stopRecording: () => void;
-  removeClip: (clipId: string) => void;
-  clearClips: () => void;
-  clearError: () => void;
-}
+/** Own recording/storage side effects and preserve unresolved references on resume. */
 export function useVoiceCapture(
   sessionId: string | null,
   userId: string | undefined,
 ): UseVoiceCaptureResult {
   const [clips, setClips] = useState<VoiceClip[]>([]);
+  const [unresolvedClipIds, setUnresolvedClipIds] = useState<string[]>([]);
+  const [hydratedSessionId, setHydratedSessionId] = useState<string | null>(null);
+  const clipIds = useMemo(() => [...clips.map((clip) => clip.id), ...unresolvedClipIds], [clips, unresolvedClipIds]);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSupported] = useState(canUseMediaRecorder);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const startPendingRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
   const durationLimitRef = useRef<number | null>(null);
@@ -54,10 +51,28 @@ export function useVoiceCapture(
   const chunksRef = useRef<BlobPart[]>([]);
   const clipIdSequenceRef = useRef(0);
   const clipsRef = useRef<VoiceClip[]>([]);
-  const clipUrlByIdRef = useRef<Map<string, string>>(new Map());
   const sessionIdRef = useRef<string | null>(sessionId);
   const userIdRef = useRef<string | undefined>(userId);
   const recordingSessionIdRef = useRef<string | null>(null);
+  const hydrationRef = useRef<{ sessionId: string; promise: Promise<boolean> } | null>(null);
+  const hydrateSession = useCallback((targetSessionId: string): Promise<boolean> => {
+    if (hydrationRef.current?.sessionId === targetSessionId) return hydrationRef.current.promise;
+    // Start and the session effect share readiness, including a newly ensured Capture.
+    const promise: Promise<boolean> = loadPersistedVoiceClips(targetSessionId).then((saved) => {
+      if (hydrationRef.current?.promise !== promise) return false;
+      clipsRef.current = saved.clips;
+      setClips(saved.clips);
+      setUnresolvedClipIds(saved.unresolvedClipIds);
+      setHydratedSessionId(targetSessionId);
+      clipIdSequenceRef.current = saved.maxSequence;
+      return true;
+    }).catch((error) => {
+      if (hydrationRef.current?.promise === promise) hydrationRef.current = null;
+      throw error;
+    });
+    hydrationRef.current = { sessionId: targetSessionId, promise };
+    return promise;
+  }, []);
   useEffect(() => {
     clipsRef.current = clips;
   }, [clips]);
@@ -68,32 +83,20 @@ export function useVoiceCapture(
     userIdRef.current = userId;
   }, [userId]);
   useEffect(() => {
-    let isActive = true;
     if (!sessionId) {
+      hydrationRef.current = null;
       setClips([]);
+      setUnresolvedClipIds([]);
+      setHydratedSessionId(null);
       clipIdSequenceRef.current = 0;
-      return () => {
-        isActive = false;
-      };
+      return;
     }
-    void (async () => {
-      try {
-        const { clips: persistedClips, maxSequence } = await loadPersistedVoiceClips(sessionId);
-        if (!isActive) {
-          return;
-        }
-        setClips(persistedClips);
-        clipIdSequenceRef.current = maxSequence;
-      } catch {
-        if (isActive) {
-          setError("Unable to load saved clips on this device.");
-        }
+    void hydrateSession(sessionId).catch(() => {
+      if (sessionIdRef.current === sessionId) {
+        setError("Unable to load saved clips on this device.");
       }
-    })();
-    return () => {
-      isActive = false;
-    };
-  }, [sessionId]);
+    });
+  }, [hydrateSession, sessionId]);
   const stopTimer = useCallback(() => {
     if (timerRef.current !== null) {
       window.clearInterval(timerRef.current);
@@ -110,23 +113,21 @@ export function useVoiceCapture(
     setError(null);
   }, []);
   const removeClip = useCallback((clipId: string) => {
-    const trackedUrl = clipUrlByIdRef.current.get(clipId);
-    revokeClipUrl(trackedUrl);
-    clipUrlByIdRef.current.delete(clipId);
-    setClips((currentClips) => currentClips.filter((clip) => clip.id !== clipId));
-    if (!sessionIdRef.current) {
-      return;
-    }
-    void deleteAudioClip(clipId).catch(() => {
+    const sessionId = sessionIdRef.current;
+    const userId = userIdRef.current;
+    if (!sessionId || !userId) return;
+    void deleteOwnedAudioClip({ clipId, sessionId, userId }).then(() => {
+      // Keep the retry control until audio and membership have committed together.
+      if (sessionIdRef.current === sessionId && userIdRef.current === userId) {
+        setClips((currentClips) => currentClips.filter((clip) => clip.id !== clipId));
+      }
+    }).catch(() => {
       setError("Could not remove this clip from local storage.");
     });
   }, []);
   const clearClips = useCallback(() => {
-    clipUrlByIdRef.current.forEach((objectUrl) => {
-      revokeClipUrl(objectUrl);
-    });
-    clipUrlByIdRef.current.clear();
     setClips([]);
+    setUnresolvedClipIds([]);
     const activeSessionId = sessionIdRef.current;
     if (!activeSessionId) {
       return;
@@ -150,16 +151,25 @@ export function useVoiceCapture(
     if (isRecording) {
       return;
     }
-    if (clipsRef.current.length >= MAX_VOICE_CLIPS_PER_CAPTURE) {
-      setError(CLIP_LIMIT_REACHED_MESSAGE);
-      return;
-    }
     const activeSessionId = sessionIdOverride ?? sessionIdRef.current;
     const activeUserId = userIdRef.current;
     if (!activeSessionId || !activeUserId) {
       setError(CLIP_SAVE_FAILURE_MESSAGE);
       return;
     }
+    try {
+      if (!await hydrateSession(activeSessionId) || sessionIdRef.current !== activeSessionId
+        || userIdRef.current !== activeUserId) return;
+    } catch {
+      setError("Unable to load saved clips on this device.");
+      return;
+    }
+    if (clipsRef.current.length >= MAX_VOICE_CLIPS_PER_CAPTURE) {
+      setError(CLIP_LIMIT_REACHED_MESSAGE);
+      return;
+    }
+    if (startPendingRef.current || mediaRecorderRef.current) return;
+    startPendingRef.current = true;
     perfMark("capture:record:tap");
     setError(null);
     setElapsedSeconds(0);
@@ -256,11 +266,13 @@ export function useVoiceCapture(
       recordingSessionIdRef.current = null;
       setIsRecording(false);
       setError("Microphone access was denied or unavailable.");
+    } finally {
+      startPendingRef.current = false;
     }
-  }, [clearDurationLimitTimer, isRecording, isSupported, stopRecording, stopTimer]);
+  }, [clearDurationLimitTimer, hydrateSession, isRecording, isSupported, stopRecording, stopTimer]);
   useEffect(() => {
-    const clipUrlById = clipUrlByIdRef.current;
     return () => {
+      hydrationRef.current = null;
       stopTimer();
       clearDurationLimitTimer();
       stopStream(streamRef.current);
@@ -268,14 +280,12 @@ export function useVoiceCapture(
       if (recorder && recorder.state !== "inactive") {
         recorder.stop();
       }
-      clipUrlById.forEach((objectUrl) => {
-        revokeClipUrl(objectUrl);
-      });
-      clipUrlById.clear();
     };
   }, [clearDurationLimitTimer, stopTimer]);
   return {
     clips,
+    clipIds,
+    isHydrating: hydratedSessionId !== sessionId,
     elapsedSeconds,
     error,
     isRecording,

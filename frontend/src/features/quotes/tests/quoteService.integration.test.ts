@@ -1,3 +1,6 @@
+/** Exercise quote services through real local persistence and intercepted HTTP.
+ * Full multipart byte serialization is covered in quoteService.audioIntegrity.
+ */
 import "fake-indexeddb/auto";
 
 import { http, HttpResponse } from "msw";
@@ -5,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { saveAudioClip } from "@/features/quotes/offline/audioRepository";
 import { resetCaptureDbForTests } from "@/features/quotes/offline/captureDb";
+import { AudioClipMissingError } from "@/features/quotes/offline/captureTypes";
 import { quoteService } from "@/features/quotes/services/quoteService";
 import type {
   Quote,
@@ -430,63 +434,36 @@ describe("quoteService integration (MSW)", () => {
     expect(capturedCustomerId).toBe("cust-1");
   });
 
-  it("extract sends multipart clips with CSRF protection", async () => {
-    setCsrfToken("integration-csrf-token");
-    let capturedCsrfHeader: string | null = null;
-    let capturedContentType: string | null = null;
-    await saveAudioClip({
-      clipId: "clip-id-1",
-      sessionId: "session-1",
-      userId: "user-1",
-      blob: new Blob(["clip-1"], { type: "audio/webm" }),
-      mimeType: "audio/webm",
-      sizeBytes: 6,
-      durationSeconds: 2,
-      sequenceNumber: 1,
-    });
-    await saveAudioClip({
-      clipId: "clip-id-2",
-      sessionId: "session-1",
-      userId: "user-1",
-      blob: new Blob(["clip-2"], { type: "audio/mp4" }),
-      mimeType: "audio/mp4",
-      sizeBytes: 6,
-      durationSeconds: 3,
-      sequenceNumber: 2,
-    });
-
-    server.use(
-      http.post("/api/quotes/extract", async ({ request }) => {
-        capturedCsrfHeader = request.headers.get("X-CSRF-Token");
-        capturedContentType = request.headers.get("Content-Type");
-
-        return HttpResponse.json({
-          quote_id: "quote-2",
-          transcript: "combined transcript",
-          line_items: [],
-          total: null,
+  it.each(["missing clip", "another session", "another user", "missing owner"])(
+    "extract rejects %s before sending any part of the capture",
+    async (failure) => {
+      setCsrfToken("integration-csrf-token");
+      for (const [clipId, sessionId, userId] of [
+        ["owned", "session-1", "user-1"],
+        ["wrong-session", "session-2", "user-1"],
+        ["wrong-user", "session-1", "user-2"],
+      ]) {
+        await saveAudioClip({
+          clipId, sessionId, userId, blob: new Blob([clipId], { type: "audio/webm" }),
+          mimeType: "audio/webm", sizeBytes: clipId.length, sequenceNumber: 1,
         });
-      }),
-    );
+      }
+      const invalidId = failure === "another session" ? "wrong-session"
+        : failure === "another user" ? "wrong-user" : "missing";
+      let extractionRequests = 0;
+      server.use(http.post("/api/quotes/extract", () => {
+        extractionRequests += 1;
+        return HttpResponse.json({ quote_id: "unexpected-quote", line_items: [] });
+      }));
 
-    const result = await quoteService.extract({
-      clipIds: ["clip-id-1", "clip-id-2"],
-      notes: "  add 10% travel surcharge  ",
-      customerId: "cust-9",
-    });
-
-    expect(capturedCsrfHeader).toBe("integration-csrf-token");
-    expect(capturedContentType).not.toContain("application/json");
-    expect(result).toEqual({
-      type: "sync",
-      quoteId: "quote-2",
-      result: {
-        transcript: "combined transcript",
-        line_items: [],
-        total: null,
-      },
-    });
-  });
+      await expect(quoteService.extract({
+        clipIds: failure === "missing owner" ? ["owned"] : ["owned", invalidId],
+        audioOwner: failure === "missing owner" ? undefined : { sessionId: "session-1", userId: "user-1" },
+        notes: "Keep every input",
+      })).rejects.toBeInstanceOf(AudioClipMissingError);
+      expect(extractionRequests).toBe(0);
+    },
+  );
 
   it("extract sends notes without clips when notes-only", async () => {
     setCsrfToken("integration-csrf-token");
@@ -545,6 +522,7 @@ describe("quoteService integration (MSW)", () => {
 
     const result = await quoteService.extract({
       clipIds: ["clip-id-1"],
+      audioOwner: { sessionId: "session-1", userId: "user-1" },
     });
 
     expect(result).toEqual({

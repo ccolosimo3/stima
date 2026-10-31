@@ -1,3 +1,6 @@
+/** Outbox lifecycle proofs use real job/capture storage with mocked extraction.
+ * The success path also protects the queued job's expected audio-owner wiring.
+ */
 import "fake-indexeddb/auto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -77,6 +80,11 @@ describe("outboxEngine", () => {
     });
 
     await runOutboxPass("user-1");
+
+    expect(mockedQuoteService.extract).toHaveBeenCalledWith(expect.objectContaining({
+      audioOwner: { sessionId: queuedJob.sessionId, userId: queuedJob.userId },
+      idempotencyKey: "idem-1",
+    }));
 
     const updatedJob = await getJob(queuedJob.jobId);
     const updatedSession = await getCaptureSession(session.sessionId);

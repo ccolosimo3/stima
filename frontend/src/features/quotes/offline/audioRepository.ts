@@ -1,16 +1,23 @@
+/** Persist audio bytes in IndexedDB and expose metadata separately.
+ * An explicit owned deletion commits audio and Capture membership together;
+ * aborted writes retain both so the user can retry without a missing reference.
+ */
 import { CAPTURE_STORE_NAMES, getDb } from "@/features/quotes/offline/captureDb";
 import type { LocalAudioClip, LocalAudioClipMeta } from "@/features/quotes/offline/captureTypes";
+import { parseStoredCapture } from "@/features/quotes/offline/captureRepositoryShared";
+import { dispatchLocalRecoveryChanged } from "@/features/quotes/offline/localRecoveryEvents";
 
 type UnknownRecord = Record<string, unknown>;
 
 type SaveAudioClipInput = Omit<LocalAudioClip, "createdAt">;
 
+/** Insert a recording once; an existing clip identity must never replace saved audio. */
 export async function saveAudioClip(clip: SaveAudioClipInput): Promise<void> {
   const blobData = await readBlobAsArrayBuffer(clip.blob);
   const db = await getDb();
   const transaction = db.transaction(CAPTURE_STORE_NAMES.audioClips, "readwrite");
   const store = transaction.objectStore(CAPTURE_STORE_NAMES.audioClips);
-  store.put({
+  store.add({
     clipId: clip.clipId,
     sessionId: clip.sessionId,
     userId: clip.userId,
@@ -64,6 +71,41 @@ export async function deleteAudioClip(clipId: string): Promise<void> {
   const store = transaction.objectStore(CAPTURE_STORE_NAMES.audioClips);
   store.delete(clipId);
   await transactionDone(transaction);
+}
+
+/** Delete available owned audio and its intended Capture membership atomically. */
+export async function deleteOwnedAudioClip(owner: {
+  clipId: string; sessionId: string; userId: string;
+}): Promise<void> {
+  const db = await getDb();
+  const transaction = db.transaction([
+    CAPTURE_STORE_NAMES.audioClips, CAPTURE_STORE_NAMES.captureSessions,
+  ], "readwrite");
+  const done = transactionDone(transaction);
+  try {
+    const audioStore = transaction.objectStore(CAPTURE_STORE_NAMES.audioClips);
+    const sessionStore = transaction.objectStore(CAPTURE_STORE_NAMES.captureSessions);
+    const [rawClip, rawSession] = await Promise.all([
+      requestToPromise(audioStore.get(owner.clipId)), requestToPromise(sessionStore.get(owner.sessionId)),
+    ]);
+    const clip = parseStoredAudioClip(rawClip);
+    const session = parseStoredCapture(rawSession);
+    if (!clip || clip.sessionId !== owner.sessionId || clip.userId !== owner.userId
+      || !session || session.userId !== owner.userId) {
+      throw new Error("Cannot delete audio that is unavailable or belongs to another Capture.");
+    }
+    session.clipIds = session.clipIds.filter((id) => id !== owner.clipId);
+    session.updatedAt = new Date().toISOString();
+    sessionStore.put(session);
+    audioStore.delete(owner.clipId);
+    await done;
+  } catch (error) {
+    // A failed request or synchronous put must roll back both stores and settle abort.
+    try { transaction.abort(); } catch { /* The transaction may already have aborted. */ }
+    await done.catch(() => {});
+    throw error;
+  }
+  dispatchLocalRecoveryChanged({ userId: owner.userId, sessionId: owner.sessionId, reason: "capture_saved" });
 }
 
 export async function deleteAllClipsForSession(sessionId: string): Promise<void> {

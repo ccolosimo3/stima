@@ -1,5 +1,7 @@
 import { listClipsForSession } from "@/features/quotes/offline/audioRepository";
 import { getTotalAudioBytes, saveAudioClip } from "@/features/quotes/offline/audioRepository";
+import { getCaptureSession } from "@/features/quotes/offline/captureRepository";
+import { buildLocalId } from "@/features/quotes/offline/captureRepositoryShared";
 import { MAX_AUDIO_TOTAL_BYTES } from "@/shared/lib/inputLimits";
 
 const MIME_TYPE_CANDIDATES = [
@@ -27,6 +29,21 @@ export interface VoiceClip {
   sequenceNumber?: number;
   sizeBytes: number;
   mimeType: string;
+}
+
+export interface UseVoiceCaptureResult {
+  clips: VoiceClip[];
+  clipIds: string[];
+  isHydrating: boolean;
+  elapsedSeconds: number;
+  error: string | null;
+  isRecording: boolean;
+  isSupported: boolean;
+  startRecording: (sessionIdOverride?: string | null) => Promise<void>;
+  stopRecording: () => void;
+  removeClip: (clipId: string) => void;
+  clearClips: () => void;
+  clearError: () => void;
 }
 
 export function canUseMediaRecorder(): boolean {
@@ -71,10 +88,16 @@ export function revokeClipUrl(url: string | undefined | null): void {
   URL.revokeObjectURL(url);
 }
 
+/** Reload display metadata without losing saved references whose audio is unavailable. */
 export async function loadPersistedVoiceClips(
   sessionId: string,
-): Promise<{ clips: VoiceClip[]; maxSequence: number }> {
-  const persistedClips = await listClipsForSession(sessionId);
+): Promise<{ clips: VoiceClip[]; maxSequence: number; unresolvedClipIds: string[] }> {
+  const [persistedClips, session] = await Promise.all([
+    listClipsForSession(sessionId),
+    getCaptureSession(sessionId),
+  ]);
+  const resolvedIds = new Set(persistedClips.map((clip) => clip.clipId));
+  const unresolvedClipIds = session?.clipIds.filter((clipId) => !resolvedIds.has(clipId)) ?? [];
   const clips = persistedClips.map((clip) => ({
     id: clip.clipId,
     durationSeconds: clip.durationSeconds ?? 0,
@@ -86,9 +109,10 @@ export async function loadPersistedVoiceClips(
     (currentMax, clip) => Math.max(currentMax, clip.sequenceNumber ?? 0),
     0,
   );
-  return { clips, maxSequence };
+  return { clips, maxSequence, unresolvedClipIds };
 }
 
+/** Persist a new recording under its own identity; sequence numbers only order clips. */
 export async function persistRecordedClip(params: {
   clipIdSequence: number;
   sessionId: string;
@@ -98,7 +122,7 @@ export async function persistRecordedClip(params: {
   durationSeconds: number;
 }): Promise<{ clip: VoiceClip; nextSequenceNumber: number; exceededSoftCap: boolean }> {
   const nextSequenceNumber = params.clipIdSequence + 1;
-  const clipId = `clip-${params.clipIdSequence}`;
+  const clipId = buildLocalId();
   const mimeType = params.blob.type || params.recorderMimeType || "audio/webm";
 
   await saveAudioClip({

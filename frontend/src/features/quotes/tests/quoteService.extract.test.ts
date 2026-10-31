@@ -79,6 +79,7 @@ describe("quoteService.extract", () => {
 
     const result = await quoteService.extract({
       clipIds: ["clip-id-1", "clip-id-2"],
+      audioOwner: { sessionId: "session-1", userId: "user-1" },
       notes: "  add 10% travel surcharge  ",
       customerId: "cust-1",
     });
@@ -147,6 +148,7 @@ describe("quoteService.extract", () => {
 
     await quoteService.extract({
       clipIds: ["clip-id-1"],
+      audioOwner: { sessionId: "session-1", userId: "user-1" },
     });
 
     const [, options] = mockedRequestWithMetadata.mock.calls[0] ?? [];
@@ -183,6 +185,7 @@ describe("quoteService.extract", () => {
     await expect(
       quoteService.extract({
         clipIds: ["missing-clip"],
+        audioOwner: { sessionId: "session-1", userId: "user-1" },
         notes: "Install sod in backyard",
       }),
     ).rejects.toBeInstanceOf(AudioClipMissingError);

@@ -6,7 +6,7 @@ import {
   useVoiceCapture,
 } from "@/features/quotes/hooks/useVoiceCapture";
 import {
-  deleteAudioClip,
+  deleteOwnedAudioClip,
   getTotalAudioBytes,
   listClipsForSession,
   saveAudioClip,
@@ -14,10 +14,13 @@ import {
 
 vi.mock("@/features/quotes/offline/audioRepository", () => ({
   saveAudioClip: vi.fn(),
-  deleteAudioClip: vi.fn(),
+  deleteOwnedAudioClip: vi.fn(),
   deleteAllClipsForSession: vi.fn(),
   getTotalAudioBytes: vi.fn(async () => 0),
   listClipsForSession: vi.fn(async () => []),
+}));
+vi.mock("@/features/quotes/offline/captureRepository", () => ({
+  getCaptureSession: vi.fn(async () => null),
 }));
 
 class FakeMediaRecorder {
@@ -52,7 +55,7 @@ class FakeMediaRecorder {
 
 describe("useVoiceCapture", () => {
   const mockedSaveAudioClip = vi.mocked(saveAudioClip);
-  const mockedDeleteAudioClip = vi.mocked(deleteAudioClip);
+  const mockedDeleteAudioClip = vi.mocked(deleteOwnedAudioClip);
   const mockedGetTotalAudioBytes = vi.mocked(getTotalAudioBytes);
   const mockedListClipsForSession = vi.mocked(listClipsForSession);
   const stopTrackMock = vi.fn();
@@ -111,7 +114,7 @@ describe("useVoiceCapture", () => {
     const storedClip = result.current.clips[0];
     expect(storedClip).toEqual(
       expect.objectContaining({
-        id: "clip-0",
+        id: expect.any(String),
         sequenceNumber: 1,
         mimeType: expect.stringContaining("audio/"),
         sizeBytes: expect.any(Number),
@@ -141,9 +144,9 @@ describe("useVoiceCapture", () => {
       result.current.removeClip(clipId ?? "");
     });
 
-    expect(result.current.clips).toHaveLength(0);
     await waitFor(() => {
-      expect(mockedDeleteAudioClip).toHaveBeenCalledWith(clipId);
+      expect(result.current.clips).toHaveLength(0);
+      expect(mockedDeleteAudioClip).toHaveBeenCalledWith({ clipId, sessionId: "session-1", userId: "user-1" });
     });
   });
 
@@ -202,6 +205,37 @@ describe("useVoiceCapture", () => {
 
     expect(result.current.error).toBe("Maximum clips reached.");
     expect(getUserMediaMock).not.toHaveBeenCalled();
+  });
+
+  it("does not start or replace the next Capture when an earlier pending hydration completes", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    mockedListClipsForSession.mockImplementation(async (sessionId) => {
+      if (sessionId === "old-session") await pending;
+      return [];
+    });
+    const { result, rerender } = renderHook(({ sessionId }) => useVoiceCapture(sessionId, "user-1"), {
+      initialProps: { sessionId: "old-session" },
+    });
+    let previousStart!: Promise<void>;
+    act(() => { previousStart = result.current.startRecording(); });
+    rerender({ sessionId: "next-session" });
+    await act(async () => { await result.current.startRecording(); });
+    await act(async () => { release(); await previousStart; });
+    expect(getUserMediaMock).toHaveBeenCalledTimes(1);
+    act(() => { result.current.stopRecording(); });
+    await waitFor(() => expect(result.current.clips).toHaveLength(1));
+    expect(mockedSaveAudioClip).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "next-session" }));
+  });
+
+  it("retries failed hydration before opening the microphone", async () => {
+    mockedListClipsForSession.mockRejectedValueOnce(new Error("temporary read failure"));
+    const { result } = renderHook(() => useVoiceCapture("session-1", "user-1"));
+    await waitFor(() => expect(result.current.error).toBe("Unable to load saved clips on this device."));
+    expect(getUserMediaMock).not.toHaveBeenCalled();
+    await act(async () => { await result.current.startRecording(); });
+    expect(result.current.isRecording).toBe(true);
+    expect(result.current.error).toBeNull();
   });
 
   it("auto-stops recording at the 120-second duration cap", async () => {
