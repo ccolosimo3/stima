@@ -50,6 +50,7 @@ class TestAudio implements LocalCaptureAudio {
   bool failPlay = false;
   bool recording = false;
   bool playing = false;
+  Completer<void>? stopped;
   String? path;
   final interruptions = <void Function()>[];
   void Function()? completed;
@@ -77,6 +78,7 @@ class TestAudio implements LocalCaptureAudio {
   @override
   Future<void> stop() async {
     recording = false;
+    if (stopped case final signal? when !signal.isCompleted) signal.complete();
     if (failStop) {
       failStop = false;
       throw StateError('synthetic native stop failure');
@@ -389,6 +391,104 @@ void main() {
     expect(await File(path).exists(), false);
     expect((await LocalCaptureStore(directory).load()).clips, isEmpty);
   });
+
+  test(
+    'repeated Delete cannot unlink an intent whose publication keeps failing',
+    () async {
+      await controller.startRecording();
+      await controller.stopRecording();
+      final id = controller.snapshot.clips.single.id;
+      final path = audio.path!;
+      store.failNext = true;
+      await controller.deleteClip(id);
+      store.failNext = true;
+      await controller.deleteClip(id);
+      expect(await File(path).exists(), true);
+      expect(
+        (await LocalCaptureStore(directory).load()).clips.single.state,
+        LocalClipState.ready,
+      );
+      await controller.retry();
+      expect(controller.snapshot.clips, isEmpty);
+      expect((await LocalCaptureStore(directory).load()).clips, isEmpty);
+    },
+  );
+
+  test(
+    'notes Retry leaves the active reservation pending until native Stop',
+    () async {
+      await controller.startRecording();
+      expect(controller.snapshot.canRetry, false);
+      final id = controller.snapshot.clips.single.id;
+      controller.updateNotes('new notes during recording');
+      store.failNext = true;
+      await controller.flush();
+      await controller.retry();
+      expect(audio.recording, true);
+      expect(controller.snapshot.recordingPhase, LocalRecordingPhase.recording);
+      expect(
+        (await LocalCaptureStore(directory).load()).clips.single.state,
+        LocalClipState.pending,
+      );
+      await controller.stopRecording();
+      final reopened = await LocalCaptureStore(directory).load();
+      expect(reopened.clips.single.id, id);
+      expect(reopened.clips.single.state, LocalClipState.ready);
+      expect(reopened.notes, 'new notes during recording');
+    },
+  );
+
+  for (final trigger in ['explicit Stop', 'lifecycle', 'duration']) {
+    test(
+      '$trigger stops native capture before a held notes write completes',
+      () async {
+        await controller.close();
+        controller = LocalCaptureController(
+          store: store,
+          audio: audio,
+          notesDebounce: const Duration(days: 1),
+          recordingLimit: trigger == 'duration'
+              ? const Duration(seconds: 1)
+              : captureMaxClipDuration,
+        );
+        await controller.onLifecycleChanged(AppLifecycleState.resumed);
+        await controller.initialize();
+        await controller.startRecording();
+        controller.updateNotes('preserve edit during recording');
+        final entered = store.enteredSave = Completer<void>();
+        final gate = store.saveGate = Completer<void>();
+        final writing = controller.flush();
+        await entered.future;
+        expect(controller.snapshot.canStopRecording, true);
+        audio.stopped = Completer<void>();
+        Future<void>? stopping;
+        if (trigger == 'explicit Stop') stopping = controller.stopRecording();
+        if (trigger == 'lifecycle') {
+          stopping = controller.onLifecycleChanged(AppLifecycleState.inactive);
+        }
+        try {
+          await audio.stopped!.future.timeout(const Duration(seconds: 3));
+          expect(audio.recording, false);
+          expect(
+            controller.snapshot.recordingPhase,
+            LocalRecordingPhase.finalizing,
+          );
+          expect(
+            (await LocalCaptureStore(directory).load()).notes,
+            isNot('preserve edit during recording'),
+          );
+        } finally {
+          gate.complete();
+          await writing;
+          if (stopping != null) await stopping;
+          await controller.flush();
+        }
+        final reopened = await LocalCaptureStore(directory).load();
+        expect(reopened.notes, 'preserve edit during recording');
+        expect(reopened.clips.single.state, LocalClipState.ready);
+      },
+    );
+  }
 
   test(
     'ordinary note editing autosaves without an explicit flush command',

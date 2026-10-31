@@ -33,6 +33,7 @@ class LocalCaptureSnapshot {
     required this.canRecord,
     required this.canRetry,
     required this.canEditNotes,
+    required this.canStopRecording,
     required this.busy,
     this.playingClipId,
     this.failure,
@@ -46,6 +47,7 @@ class LocalCaptureSnapshot {
   final bool canRecord;
   final bool canRetry;
   final bool canEditNotes;
+  final bool canStopRecording;
   final bool busy;
   final String? playingClipId;
   final LocalCaptureFailure? failure;

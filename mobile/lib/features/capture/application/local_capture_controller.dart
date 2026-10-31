@@ -11,9 +11,9 @@ import 'local_capture_snapshot.dart';
 
 class _SaveFailure implements Exception {}
 
-/// Owns one local Capture. Commands serialize file/native effects, while intent
-/// and accepted text change synchronously so late acknowledgements cannot win.
-/// Native bytes are never discarded by interruption or failed publication.
+/// Owns one local Capture. Metadata mutations serialize; native Stop bypasses
+/// storage latency. Accepted text and intent stay current across late native
+/// acknowledgements. Interruption or failed publication never discards bytes.
 class LocalCaptureController extends ChangeNotifier {
   LocalCaptureController({
     required this._store,
@@ -34,6 +34,8 @@ class LocalCaptureController extends ChangeNotifier {
   LocalCapture? _capture;
   String _notes = '';
   bool _dirty = false;
+  // A playback result cannot acknowledge a failed metadata publication.
+  bool _saveFailed = false;
   bool _loading = true;
   bool _closing = false;
   bool _closed = false;
@@ -51,6 +53,8 @@ class LocalCaptureController extends ChangeNotifier {
   Timer? _limitTimer;
   final Stopwatch _elapsed = Stopwatch();
   Future<void> _tail = Future.value();
+  Future<void>? _nativeStart;
+  Future<bool>? _nativeStop;
 
   LocalCaptureSnapshot get snapshot => LocalCaptureSnapshot(
     capture: _capture,
@@ -58,7 +62,8 @@ class LocalCaptureController extends ChangeNotifier {
     recordingPhase: _phase,
     saveState: _loading
         ? LocalSaveState.loading
-        : _failure?.kind == LocalFailureKind.load ||
+        : _saveFailed ||
+              _failure?.kind == LocalFailureKind.load ||
               _failure?.kind == LocalFailureKind.save
         ? LocalSaveState.error
         : _dirty
@@ -78,12 +83,18 @@ class LocalCaptureController extends ChangeNotifier {
         !_closing &&
         _busy == 0 &&
         (_failure?.kind == LocalFailureKind.load ||
-            _dirty ||
+            _saveFailed ||
             (_capture?.clips.any(
-                  (clip) => clip.state != LocalClipState.ready,
+                  (clip) =>
+                      clip.id != _activeClipId &&
+                      clip.state != LocalClipState.ready,
                 ) ??
                 false)),
     canEditNotes: !_closing && !_loading && _capture != null,
+    canStopRecording:
+        !_closing &&
+        _phase == LocalRecordingPhase.recording &&
+        _activeClipId != null,
     busy: _busy > 0 || _closing,
     playingClipId: _playingClipId,
     failure: _failure,
@@ -130,6 +141,7 @@ class LocalCaptureController extends ChangeNotifier {
         _capture = await _store.load();
         _notes = _capture!.notes;
         _dirty = false;
+        _saveFailed = false;
         _failure = null;
       } finally {
         _loading = false;
@@ -148,6 +160,7 @@ class LocalCaptureController extends ChangeNotifier {
     }
     _notes = committedNotes;
     _dirty = true;
+    _saveFailed = false;
     if (_failure?.kind == LocalFailureKind.save) _failure = null;
     _notesTimer?.cancel();
     _notesTimer = Timer(notesDebounce, () => unawaited(flush()));
@@ -162,9 +175,11 @@ class LocalCaptureController extends ChangeNotifier {
       await _store.save(committed);
     } catch (_) {
       _dirty = true;
+      _saveFailed = true;
       throw _SaveFailure();
     }
     _capture = committed;
+    _saveFailed = false;
     _dirty = _notes != committed.notes;
     if (_failure?.kind == LocalFailureKind.save) _failure = null;
     _changed();
@@ -255,11 +270,12 @@ class LocalCaptureController extends ChangeNotifier {
           }
           _activeClipId = clip.id;
           _phase = LocalRecordingPhase.starting;
-          _changed();
-          await _audio.start(
+          _nativeStart = _audio.start(
             file.path,
             onInterruption: () => _interrupt(clip.id),
           );
+          _changed();
+          await _nativeStart;
           if (intent != _intent ||
               _closing ||
               _lifecycle != AppLifecycleState.resumed) {
@@ -307,6 +323,7 @@ class LocalCaptureController extends ChangeNotifier {
 
   Future<void> stopRecording() {
     _cancelIntent();
+    _beginStop();
     return _run(
       () async {
         await _finalize();
@@ -317,21 +334,38 @@ class LocalCaptureController extends ChangeNotifier {
     );
   }
 
-  Future<void> _finalize() async {
-    final id = _activeClipId;
-    if (id == null) return;
+  // Native stop cannot wait for the metadata queue: a stalled notes write
+  // must not keep the microphone active on Stop, interruption or the limit.
+  void _beginStop() {
+    if (_activeClipId == null || _nativeStop != null) return;
     _phase = LocalRecordingPhase.finalizing;
     _recordTimer?.cancel();
     _limitTimer?.cancel();
     _recordTimer = null;
     _elapsed.stop();
-    _changed();
-    try {
+    _nativeStop = (() async {
+      try {
+        await _nativeStart;
+      } catch (_) {
+        // Failed Start can still own native resources or partial bytes.
+      }
       await _audio.stop();
+    })().then((_) => true, onError: (Object error) => false);
+    _changed();
+  }
+
+  Future<void> _finalize() async {
+    final id = _activeClipId;
+    if (id == null) return;
+    _beginStop();
+    try {
+      if (!await _nativeStop!) throw StateError('Native stop failed.');
       await _prepareClip(id);
       _failure = null;
     } finally {
       _activeClipId = null;
+      _nativeStart = null;
+      _nativeStop = null;
       _phase = LocalRecordingPhase.idle;
     }
   }
@@ -358,6 +392,7 @@ class LocalCaptureController extends ChangeNotifier {
 
   Future<void> _recover() async {
     for (final clip in List<LocalAudioClip>.of(_capture!.clips)) {
+      if (clip.id == _activeClipId) continue;
       if (clip.state == LocalClipState.deleting) {
         await _delete(clip.id);
       } else if (clip.state == LocalClipState.pending) {
@@ -418,6 +453,9 @@ class LocalCaptureController extends ChangeNotifier {
       await _publish(_capture!);
       clip = _capture!.clips.firstWhere((c) => c.id == id);
     }
+    // A repeated Delete may be retrying an in-memory intent whose first
+    // publication failed. Commit that existing dirty state before any unlink.
+    await _flush();
     await _store.deleteAudio(_capture!, clip);
     await _publish(
       _capture!.copyWith(
@@ -436,7 +474,7 @@ class LocalCaptureController extends ChangeNotifier {
         if (!await file.exists()) throw StateError('Audio is unavailable.');
         final intent = ++_playIntent;
         _playingClipId = id;
-        _failure = null;
+        if (_failure?.kind == LocalFailureKind.playback) _failure = null;
         try {
           await _audio.play(
             file.path,
@@ -493,6 +531,7 @@ class LocalCaptureController extends ChangeNotifier {
         _phase != LocalRecordingPhase.requestingPermission) {
       _cancelIntent();
     }
+    _beginStop();
     _changed();
     return _run(
       () async {
@@ -508,6 +547,7 @@ class LocalCaptureController extends ChangeNotifier {
   Future<void> suspend() {
     _lifecycle = AppLifecycleState.hidden;
     _cancelIntent();
+    _beginStop();
     return _run(
       () async {
         await _stopPlayback();
@@ -523,6 +563,7 @@ class LocalCaptureController extends ChangeNotifier {
     if (_closing) return _tail;
     _closing = true;
     _cancelIntent();
+    _beginStop();
     _notesTimer?.cancel();
     return _run(
       () async {

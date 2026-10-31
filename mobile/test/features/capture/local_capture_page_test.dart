@@ -14,9 +14,16 @@ import '../../support/local_capture_test_audio.dart';
 class _FailingStore extends LocalCaptureStore {
   _FailingStore(super.directory);
   bool failNext = false;
+  Completer<void>? enteredSave;
+  Completer<void>? saveGate;
 
   @override
   Future<void> save(LocalCapture capture) async {
+    enteredSave?.complete();
+    enteredSave = null;
+    final gate = saveGate;
+    saveGate = null;
+    if (gate != null) await gate.future;
     if (failNext) {
       failNext = false;
       throw const FileSystemException('Injected write failure');
@@ -206,6 +213,100 @@ void main() {
           () async => (await LocalCaptureStore(directory).load()).notes,
         ),
         'Keep the newest notes 🧰',
+      );
+    },
+  );
+
+  testWidgets('Stop remains usable while notes are waiting to save', (
+    tester,
+  ) async {
+    await mount(tester);
+    await _tap(tester, find.byTooltip('Start recording'));
+    await _idle(tester, controller);
+    await tester.enterText(find.byType(TextField), 'edit during recording');
+    final entered = store.enteredSave = Completer<void>();
+    final gate = store.saveGate = Completer<void>();
+    unawaited(controller.flush());
+    await tester.pump();
+    await tester.runAsync(() => entered.future);
+    try {
+      await _tap(tester, find.byTooltip('Stop recording'));
+      expect(
+        controller.snapshot.recordingPhase,
+        LocalRecordingPhase.finalizing,
+      );
+    } finally {
+      gate.complete();
+      await _idle(tester, controller);
+    }
+    expect(controller.snapshot.clips.single.state, LocalClipState.ready);
+  });
+
+  testWidgets(
+    'unrelated playback and a successful notes save keep unfinished-clip Retry',
+    (tester) async {
+      await mount(tester);
+      await _tap(tester, find.byTooltip('Start recording'));
+      await _idle(tester, controller);
+      await _tap(tester, find.byTooltip('Stop recording'));
+      await _idle(tester, controller);
+      await _tap(tester, find.byTooltip('Start recording'));
+      await _idle(tester, controller);
+      store.failNext = true;
+      await _tap(tester, find.byTooltip('Stop recording'));
+      await _idle(tester, controller);
+      final pendingId = controller.snapshot.clips.last.id;
+      expect(controller.snapshot.clips.last.state, LocalClipState.pending);
+      await _tap(tester, find.byTooltip('Play clip 1'));
+      await _idle(tester, controller);
+      expect(find.text('Retry'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'keep the pending clip');
+      await tester.runAsync(() => controller.flush());
+      await tester.pump();
+      expect(controller.snapshot.failure, isNull);
+      expect(find.text('Retry'), findsOneWidget);
+      await _tap(tester, find.text('Retry'));
+      await _idle(tester, controller);
+      final reopened = await tester.runAsync(
+        () => LocalCaptureStore(directory).load(),
+      );
+      expect(reopened!.clips.length, 2);
+      expect(reopened.clips.last.id, pendingId);
+      expect(reopened.clips.last.state, LocalClipState.ready);
+    },
+  );
+
+  testWidgets(
+    'playback errors cannot erase the unsaved-notes acknowledgement',
+    (tester) async {
+      await mount(tester);
+      await _tap(tester, find.byTooltip('Start recording'));
+      await _idle(tester, controller);
+      await _tap(tester, find.byTooltip('Stop recording'));
+      await _idle(tester, controller);
+      await tester.enterText(find.byType(TextField), 'unsaved after playback');
+      store.failNext = true;
+      await tester.runAsync(() => controller.flush());
+      await tester.pump();
+      audio.failPlay = true;
+      await _tap(tester, find.byTooltip('Play clip 1'));
+      await _idle(tester, controller);
+      audio.failPlay = false;
+      await _tap(tester, find.byTooltip('Play clip 1'));
+      await _idle(tester, controller);
+      expect(controller.snapshot.saveState, LocalSaveState.error);
+      expect(
+        find.textContaining('Your latest changes are not saved yet.'),
+        findsOneWidget,
+      );
+      expect(find.text('Retry'), findsOneWidget);
+      await _tap(tester, find.text('Retry'));
+      await _idle(tester, controller);
+      expect(controller.snapshot.saveState, LocalSaveState.saved);
+      expect(
+        (await tester.runAsync(() => LocalCaptureStore(directory).load()))!
+            .notes,
+        'unsaved after playback',
       );
     },
   );

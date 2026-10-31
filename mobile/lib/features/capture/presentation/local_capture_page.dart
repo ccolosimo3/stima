@@ -128,6 +128,12 @@ class _LocalCapturePageState extends State<LocalCapturePage>
     if (snapshot.saveState == LocalSaveState.pending) {
       return const CaptureNotice('Saving on this device…');
     }
+    if (snapshot.saveState == LocalSaveState.error) {
+      return const CaptureNotice(
+        'Your latest changes are not saved yet. Existing notes and audio are kept; retry saving.',
+        tone: CaptureNoticeTone.error,
+      );
+    }
     if (snapshot.recordingPhase == LocalRecordingPhase.recording ||
         snapshot.recordingPhase == LocalRecordingPhase.starting) {
       return const CaptureNotice(
@@ -232,7 +238,7 @@ class _LocalCapturePageState extends State<LocalCapturePage>
                   elapsed: snapshot?.elapsed ?? Duration.zero,
                   inputLocked: !(snapshot?.canEditNotes ?? false),
                   canRecord: snapshot?.canRecord ?? false,
-                  canStopRecording: !(snapshot?.busy ?? true),
+                  canStopRecording: snapshot?.canStopRecording ?? false,
                   notice: _notice(snapshot),
                 ),
                 onNotesChanged: (notes) => controller?.updateNotes(notes),
@@ -244,7 +250,7 @@ class _LocalCapturePageState extends State<LocalCapturePage>
                 onStopPlayback: () => _request(controller!.stopPlayback),
                 onRetry: _openFailed
                     ? () => unawaited(_open())
-                    : snapshot?.canRetry == true && snapshot?.failure != null
+                    : snapshot?.canRetry == true
                     ? () => _request(controller!.retry)
                     : null,
               ),
