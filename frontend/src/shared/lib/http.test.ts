@@ -177,8 +177,9 @@ describe("http request helper", () => {
 
   it("requestBlob returns binary payload for PDF endpoints", async () => {
     const fetchMock = vi.mocked(fetch);
+    const expectedBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x00, 0xff]);
     fetchMock.mockResolvedValueOnce(
-      new Response("mock-pdf-content", {
+      new Response(expectedBytes, {
         status: 200,
         headers: { "Content-Type": "application/pdf" },
       }),
@@ -190,7 +191,14 @@ describe("http request helper", () => {
     });
 
     expect(blob.type).toBe("application/pdf");
-    expect(await blob.text()).toBe("mock-pdf-content");
+    // JSDOM's Blob is readable through its own realm's FileReader.
+    const contents = await new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(blob);
+    });
+    expect(new Uint8Array(contents)).toEqual(expectedBytes);
   });
 
   it("returns null for empty 204 responses even when content-type is json", async () => {
