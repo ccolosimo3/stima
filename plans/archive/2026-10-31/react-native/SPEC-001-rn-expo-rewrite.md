@@ -1,6 +1,8 @@
 # Umbrella Spec: React Native / Expo Native Client for Stima
 
-> **Status:** Planning  
+> Historical React Native/Expo proposal, superseded by the operator-selected Flutter client on 2026-10-31. Preserve as rationale; use [the current Flutter roadmap](../../../flutter/roadmap.md) for execution.
+
+> **Status:** Superseded; not implemented under this React Native proposal
 > **Scope:** New native mobile frontend/client; backend remains source-of-truth with mobile auth additions. Existing PWA remains supported.  
 > **Non-Goal:** Replacing the existing PWA. The web app continues to serve browser users; this spec adds a native mobile client.
 
@@ -151,20 +153,20 @@ Each child spec now lives in its own file for issue slicing while the umbrella s
 
 | Spec | File |
 | --- | --- |
-| Spec A: Expo Scaffold & Navigation | `plans/react-native/SPEC-001A-expo-scaffold-navigation.md` |
-| Spec B: Design Token -> Restyle Theme | `plans/react-native/SPEC-001B-design-token-restyle-theme.md` |
-| Spec C: Native Auth & HTTP Layer | `plans/react-native/SPEC-001C-native-auth-http-layer.md` |
-| Spec D: SQLite Schema & Offline Repositories | `plans/react-native/SPEC-001D-sqlite-offline-repositories.md` |
-| Spec E: Outbox Engine Port | `plans/react-native/SPEC-001E-outbox-engine-port.md` |
-| Spec F: Capture Flow | `plans/react-native/SPEC-001F-capture-flow.md` |
-| Spec G: Quote Review & Edit | `plans/react-native/SPEC-001G-quote-review-edit.md` |
-| Spec H: Quote List, Preview & Share | `plans/react-native/SPEC-001H-quote-list-preview-share.md` |
-| Spec I: Customers & Settings | `plans/react-native/SPEC-001I-customers-settings.md` |
-| Spec J: Onboarding & Profile | `plans/react-native/SPEC-001J-onboarding-profile.md` |
-| Spec K: PDF Generation & Sharing | `plans/react-native/SPEC-001K-pdf-generation-sharing.md` |
-| Spec L: Deep Linking | `plans/react-native/SPEC-001L-deep-linking.md` |
-| Spec M: Push Notifications (Optional v1.1) | `plans/react-native/SPEC-001M-push-notifications.md` |
-| Spec N: App Store Submission & EAS Update | `plans/react-native/SPEC-001N-app-store-submission-eas-update.md` |
+| Spec A: Expo Scaffold & Navigation | `plans/archive/2026-10-31/react-native/SPEC-001A-expo-scaffold-navigation.md` |
+| Spec B: Design Token -> Restyle Theme | `plans/archive/2026-10-31/react-native/SPEC-001B-design-token-restyle-theme.md` |
+| Spec C: Native Auth & HTTP Layer | `plans/archive/2026-10-31/react-native/SPEC-001C-native-auth-http-layer.md` |
+| Spec D: SQLite Schema & Offline Repositories | `plans/archive/2026-10-31/react-native/SPEC-001D-sqlite-offline-repositories.md` |
+| Spec E: Outbox Engine Port | `plans/archive/2026-10-31/react-native/SPEC-001E-outbox-engine-port.md` |
+| Spec F: Capture Flow | `plans/archive/2026-10-31/react-native/SPEC-001F-capture-flow.md` |
+| Spec G: Quote Review & Edit | `plans/archive/2026-10-31/react-native/SPEC-001G-quote-review-edit.md` |
+| Spec H: Quote List, Preview & Share | `plans/archive/2026-10-31/react-native/SPEC-001H-quote-list-preview-share.md` |
+| Spec I: Customers & Settings | `plans/archive/2026-10-31/react-native/SPEC-001I-customers-settings.md` |
+| Spec J: Onboarding & Profile | `plans/archive/2026-10-31/react-native/SPEC-001J-onboarding-profile.md` |
+| Spec K: PDF Generation & Sharing | `plans/archive/2026-10-31/react-native/SPEC-001K-pdf-generation-sharing.md` |
+| Spec L: Deep Linking | `plans/archive/2026-10-31/react-native/SPEC-001L-deep-linking.md` |
+| Spec M: Push Notifications (Optional v1.1) | `plans/archive/2026-10-31/react-native/SPEC-001M-push-notifications.md` |
+| Spec N: App Store Submission & EAS Update | `plans/archive/2026-10-31/react-native/SPEC-001N-app-store-submission-eas-update.md` |
 
 Each child spec below still summarizes the goal, acceptance criteria, key files to reference from the current codebase, and estimated effort.
 

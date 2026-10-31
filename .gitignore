@@ -34,10 +34,13 @@ infra/terraform/envs/*.tfvars
 frontend/stats.html
 plans/archived
 plans/*
-!plans/2026-04-29
 plans/2026-04-24
 plans/follow-ups
-!plans/react-native/
+!plans/README.md
+!plans/flutter/
+plans/flutter/*
+!plans/flutter/roadmap.md
+!plans/flutter/backlog-review.md
 
 stima-design-system/
 # Added by code-review-graph

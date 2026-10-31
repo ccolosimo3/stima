@@ -1,6 +1,8 @@
 # SPEC-001K — PDF Generation & Sharing
 
-**Parent umbrella:** `plans/react-native/SPEC-001-rn-expo-rewrite.md`
+> Historical React Native/Expo proposal, superseded by the operator-selected Flutter client on 2026-10-31. Preserve as rationale; use [the current Flutter roadmap](../../../flutter/roadmap.md) for execution.
+
+**Parent umbrella:** `plans/archive/2026-10-31/react-native/SPEC-001-rn-expo-rewrite.md`
 **Phase:** 4 Native Integrations
 **Effort:** 1–2 days
 

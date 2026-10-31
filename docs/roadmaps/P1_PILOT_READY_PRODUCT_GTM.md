@@ -2,8 +2,11 @@
 
 Date: 2026-04-27  
 Parent: follows GitHub Issue #549 — P0 Field-Resilient Capture Program  
-Status: Revised draft after internal + agent review passes  
+Status: Historical pilot-program proposal; retained acceptance, not the active execution queue
+
 Mode: gated umbrella spec with small child tasks
+
+The operator selected a Flutter learning/portfolio client on 2026-10-31 while retaining the existing web/backend product. Use the [current Flutter roadmap](../../plans/flutter/roadmap.md) for sequencing and the [backlog reconciliation](../../plans/flutter/backlog-review.md) for unresolved pilot/security work. The original proposal below is preserved as historical rationale; its estimates, completed-work assumptions and task references are not current verification evidence.
 
 ---
 

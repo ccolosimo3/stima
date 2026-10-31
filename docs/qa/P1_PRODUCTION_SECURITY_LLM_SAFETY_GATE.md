@@ -6,6 +6,8 @@ Scope: PR 1 only — inventory, classification, and follow-up task proposal
 Code reviewed: `4c2b8f5d58a5b670b73ebe6f3690679d5b707e6c` (`2026-05-04 4c2b8f5 P1 Spec 6: add in-app support contact flow (#690)`)  
 Branch: `task-616-security-llm-safety-gate-pr1`
 
+This is the historical May PR1 inventory, not current execution status. Logging/configuration work subsequently landed in #694/#692; other findings still have residual work. The [2026-10-31 backlog reconciliation](../../plans/flutter/backlog-review.md) distinguishes those cases. Preserve this original inventory as evidence of what was reviewed then; do not use its old implementation-status language as a fresh release verdict.
+
 ## Summary
 
 Status: not ready to clear the P1 production safety gate yet.
