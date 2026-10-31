@@ -10,8 +10,8 @@ Update inline during planning discussions as terms are resolved. Do not add back
 
 | Term | Definition |
 | --- | --- |
-| **Capture** | The act of uploading or photographing a source document (invoice, proposal, handwritten quote) that will be processed by the system. A Capture creates a Job. |
-| **Extraction** | The automated process of reading a Capture and identifying structured data (line items, totals, provider info) from it. Extraction runs as a background Job. Narrow to the structured-data-parsing step only — not the full Capture-to-Quote pipeline. |
+| **Capture** | Collecting job details, including written notes, recorded audio, and source documents. A Capture may exist only on the device. Saving it does not create an Extraction Job or Quote Draft; explicit submission requests Extraction. |
+| **Extraction** | The automated structured-data-parsing step that reads a submitted Capture and identifies line items, totals, and provider information. It may run inline or as a background Job; its result is reviewed as a Quote Draft. This term does not mean the full Capture-to-Quote pipeline. |
 | **Quote Draft** | The intermediate representation of an extracted or manually entered quote, still under review. A Quote Draft can be edited before being confirmed as a Quote. Prefer the full term in issue titles to avoid confusion with "Quote". |
 | **Local Review Draft** | The browser/session-backed editable state used during Quote Review. It can differ from the backend Quote Draft until the user chooses Save Draft or Continue. Sheet-level autosave commits to the Local Review Draft only. |
 | **Duplicate Quote** | A new Quote Draft created by copying reusable content from an existing Quote. It gets a new id and document number, does not keep share/invoice/extraction artifacts, and is not a template. |
@@ -33,7 +33,7 @@ Update inline during planning discussions as terms are resolved. Do not add back
 ```
 Customer → (many) Quotes
 Provider → (many) Quotes
-Capture → Job → Extraction → Quote Draft → (Review using Local Review Draft) → Quote → (Share link)
+Capture → (explicit submission; inline or Job) → Extraction → Quote Draft → (Review using Local Review Draft) → Quote → (Share link)
 Quote → (many) Line Items
 Quote → Notes
 Line Item → Notes

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../features/capture/presentation/capture_preview.dart';
+import '../features/capture/application/local_capture_controller.dart';
+import '../features/capture/presentation/local_capture_page.dart';
 import 'theme/stima_theme.dart';
 
 class StimaApp extends StatefulWidget {
-  const StimaApp({super.key});
+  const StimaApp({super.key, this.createCaptureController});
+
+  final Future<LocalCaptureController> Function()? createCaptureController;
 
   @override
   State<StimaApp> createState() => _StimaAppState();
@@ -20,7 +23,8 @@ class _StimaAppState extends State<StimaApp> {
       theme: stimaTheme(Brightness.light),
       darkTheme: stimaTheme(Brightness.dark),
       themeMode: _themeMode,
-      home: CapturePreview(
+      home: LocalCapturePage(
+        createController: widget.createCaptureController,
         onToggleTheme: () => setState(() {
           _themeMode = _themeMode == ThemeMode.dark
               ? ThemeMode.light

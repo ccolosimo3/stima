@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:stima_mobile/app/stima_app.dart';
 import 'package:stima_mobile/app/theme/stima_theme.dart';
-import 'package:stima_mobile/features/capture/presentation/capture_preview.dart';
 import 'package:stima_mobile/features/capture/presentation/capture_screen.dart';
 import 'package:stima_mobile/features/capture/presentation/capture_view_data.dart';
+
+import '../../support/capture_preview.dart';
 
 const _clips = [
   CaptureClip(id: 'first-audio', number: 1, duration: Duration(seconds: 28)),
@@ -430,7 +430,17 @@ void main() {
   testWidgets(
     'Back and blank requests stay in the preview and theme changes preserve notes',
     (tester) async {
-      await tester.pumpWidget(const StimaApp());
+      var light = false;
+      await tester.pumpWidget(
+        StatefulBuilder(
+          builder: (context, update) => MaterialApp(
+            theme: stimaTheme(light ? Brightness.light : Brightness.dark),
+            home: CapturePreview(
+              onToggleTheme: () => update(() => light = !light),
+            ),
+          ),
+        ),
+      );
       await tester.enterText(
         find.byType(TextField),
         'Preserve my in-memory notes',
