@@ -1,6 +1,8 @@
 ## Reviewer Handoff: SPEC-001 React Native / Expo Native Client
 
-**Spec path:** `plans/react-native/SPEC-001-rn-expo-rewrite.md`
+> Historical React Native/Expo proposal, superseded by the operator-selected Flutter client on 2026-10-31. Preserve as rationale; use [the current Flutter roadmap](../../../flutter/roadmap.md) for execution.
+
+**Spec path:** `plans/archive/2026-10-31/react-native/SPEC-001-rn-expo-rewrite.md`
 **Current status:** Reviewer-handoff ready (two review rounds applied). Needs final in-repo accuracy pass before issue slicing.
 **Your job:** Read the spec, verify it against actual repo files, and report `APPROVED` or `ACTIONABLE`.
 

@@ -1,6 +1,8 @@
 # SPEC-001F — Capture Flow
 
-**Parent umbrella:** `plans/react-native/SPEC-001-rn-expo-rewrite.md`
+> Historical React Native/Expo proposal, superseded by the operator-selected Flutter client on 2026-10-31. Preserve as rationale; use [the current Flutter roadmap](../../../flutter/roadmap.md) for execution.
+
+**Parent umbrella:** `plans/archive/2026-10-31/react-native/SPEC-001-rn-expo-rewrite.md`
 **Phase:** 3 Core Features
 **Effort:** 7–10 days
 
