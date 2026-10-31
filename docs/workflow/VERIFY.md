@@ -65,6 +65,19 @@ cd backend && ruff check . && mypy . && bandit -r app/ && pytest && cd ../fronte
 cd frontend && npx tsc --noEmit && npx eslint src/ && npx vitest run && npm run build
 ```
 
+### Mobile Verification
+
+The sibling Flutter client uses Flutter 3.47.9 / Dart 3.13.7. From the repository
+root on Windows, run `powershell -NoProfile -File scripts/mobile-verify.ps1` with
+the pinned SDK on PATH. The script rejects an SDK mismatch before checks, then
+runs enforced-lockfile dependency resolution, format, analyze, widget tests, and
+an Android debug APK build, stopping on the first failure.
+
+See [mobile setup and direct commands](../../mobile/README.md) for other hosts,
+Android launch, and the required macOS/Xcode and iPhone development-signing proof.
+Generated iOS source has no compile or runtime verification from Windows. Existing
+web/backend gates remain separate; this entrypoint does not establish mobile CI.
+
 ### Backend Verification
 
 ```bash
