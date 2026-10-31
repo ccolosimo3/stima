@@ -1,105 +1,25 @@
-# Stima mobile
+# Disposable native codec probe
 
-Development client for Android and iOS. The app opens a clearly labeled synthetic
-Capture preview using the real presentation widgets. Recording, accounts, storage,
-and API access remain later work.
+This branch is a temporary direct-package experiment, not the Stima local Capture implementation. It retains the accepted project/toolchain and unrelated source only to make a small native source transfer. Main runs the probe instead of the product preview. It has no backend/provider/account operation and is not production recovery code.
 
-## Capture UI preview
+Pins: Flutter 3.47.9 / Dart 3.13.7; record 7.1.2, path_provider 2.1.6, audioplayers 6.8.1, uuid 4.6.0; committed lockfile fixes the resolved native packages.
 
-Run the app with the commands below. The top **Preview state** control loads
-empty/notes/clips, starting/recording, local-save feedback, microphone/interruption,
-and Extraction states. The theme control switches dark/light for this run only;
-dark is the initial appearance. Exact brand fonts and stored theme preferences
-are not bundled yet.
+Development app identities are distinct from Stima:
 
-Notes and clip deletion change in-memory fixture data. Start/Stop, Back, Start
-blank and Extract display request feedback; they do not use a microphone, save
-files, create documents, navigate to unbuilt screens or contact a server. Extract
-locks the supplied input; selecting **Extraction error** keeps the same notes and
-clips and restores editing. The interruption state reflects the first-version
-stop-and-preserve direction without claiming that this preview saved audio.
+- Android application ID: `dev.stima.probe.capture_codec_probe` (explicit existing MainActivity class).
+- iOS bundle: `dev.stima.probe.captureCodecProbe`; tests append `.RunnerTests`.
+- No team or signing material is committed. Use the authorized personal development team on the Mac; no company team, store purchase or cloud service.
 
-`CaptureScreen` receives `CaptureViewData` and callbacks. The caller owns all
-operational state; the screen owns only native text editing. The notes ceiling
-matches the web's 50,000 UTF-16 code units. IME composition can finish before an
-over-limit committed edit is rejected; only accepted committed text reaches the
-caller. No Unicode string is truncated to enforce that limit.
-
-Focused presentation tests, from `mobile/`:
+From `mobile/` using the pinned SDK:
 
 ```text
-flutter test test/features/capture/capture_screen_test.dart
-```
-
-Widget/platform-override renders do not prove physical Android/iPhone keyboard,
-permission, back/edge-swipe, interruption or save/restart behavior. Those checks
-remain with functional capture and the iPhone build route described below.
-
-## Prerequisites
-
-- Flutter **3.47.9**, including Dart **3.13.7**. The exact Flutter pin is
-  [.flutter-version](.flutter-version); the verification script checks the running
-  SDK. Follow Flutter's [manual installation](https://docs.flutter.dev/install/manual)
-  and [Android setup](https://docs.flutter.dev/platform-integration/android/setup).
-- Android SDK and a configured Android emulator or development device. Use
-  `flutter doctor` to check your local setup. Put the pinned Flutter SDK's `bin`
-  directory on PATH before running the Windows script.
-
-## Verify and run
-
-From the repository root on Windows:
-
-```powershell
-powershell -NoProfile -File scripts/mobile-verify.ps1
-```
-
-The script checks the SDK version, resolves the committed application lockfile,
-checks formatting, analyzes, runs widget tests, and builds the Android debug APK.
-It identifies each step and stops with a nonzero exit on the first failure. It
-does not install the SDK or change PATH.
-
-On other development hosts, use the same pinned SDK and run from `mobile/`,
-stopping if any command fails:
-
-```text
-flutter --version --machine
 flutter pub get --enforce-lockfile
-dart format --output=none --set-exit-if-changed lib test
-flutter analyze
-flutter test
-flutter build apk --debug
+flutter analyze lib
+flutter run -d <device-id>
 ```
 
-Check that `frameworkVersion` in the first command matches `.flutter-version`
-before continuing. To launch on a configured Android target from `mobile/`:
+Use synthetic speech/notes only. On first Start grant microphone access. Stop explicitly, or lock/switch apps after recording is acknowledged, then return. The display logs native/lifecycle events, expected path, stop result, byte count and native-player duration. Play saved uses the local file. Reopen metadata reads the saved record again; force-stop/close and reopen the app to inspect the same ID/file. The request is AAC-LC `.m4a`, mono/16kHz/64kbps; inspect actual output metadata because the platform can adjust settings. No background recording mode/service exists.
 
-```text
-flutter devices
-flutter run -d <android-device-id>
-```
+To validate actual codec rather than only a returned path, play the synthetic recording and inspect/decode the exported app-owned M4A with native audio tools (for example macOS `afinfo` and `afconvert`). Keep recordings and app containers private; do not commit/upload them. Root coordinates any device container extraction and physical test. An Android emulator does not prove physical microphone/audibility or iPhone lifecycle.
 
-The APK is at `build/app/outputs/flutter-apk/app-debug.apk`. The local verification
-entrypoint is separate from the existing web/backend checks; hosted mobile CI is
-not configured yet.
-
-## Platform identities and iPhone prerequisite
-
-The pinned generator used `--org com.example --project-name stima_mobile` and
-retains its development identifiers:
-
-| Target | Generated identifier |
-| --- | --- |
-| Android application | `com.example.stima_mobile` |
-| iOS Runner | `com.example.stimaMobile` |
-| iOS RunnerTests | `com.example.stimaMobile.RunnerTests` |
-
-These are placeholders. Choose final store identities and release signing before
-distribution. Do not copy Android's underscore-containing identifier into iOS.
-Keep signing credentials and machine-local configuration out of source control.
-
-`ios/` contains generated source only. It has not been compiled, signed, or run
-on an iOS simulator or iPhone by this Windows foundation task. The platform lead
-and parent roadmap must obtain an authorized macOS/Xcode build route and
-development signing, then run this foundation on the user's iPhone **before
-accepting the first native capture journey**. Android emulator proof does not
-establish physical Android or iPhone behavior.
+The probe only writes its own app's persistent support directory `stima_codec_probe/`, with unique audio paths and small pending/saved metadata. It does not delete audio on failure, call destructive recorder.cancel, or reset data. Its direct JSON write is NOT the production Capture commit/recovery protocol. No claim of process-death reconstruction of an incomplete M4A. Existing product widget fixtures retained elsewhere in the tree do not provide probe/native coverage. No comprehensive tests or product review is claimed for this disposable branch.

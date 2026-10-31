@@ -1,19 +1,19 @@
 name: stima_mobile
-description: Stima mobile development client.
+description: Disposable native codec probe; not the production Capture feature.
 publish_to: 'none'
 version: 1.0.0+1
-
 environment:
   sdk: ^3.13.7
-
 dependencies:
   flutter:
     sdk: flutter
-
+  record: 7.1.2
+  path_provider: 2.1.6
+  audioplayers: 6.8.1
+  uuid: 4.6.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-
 flutter:
   uses-material-design: true
