@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 
-const captureNotesMaxCodeUnits = 50000;
+import '../domain/local_capture.dart';
+
+export '../domain/local_capture.dart' show captureNotesMaxCodeUnits;
 
 /// Retains the web field's UTF-16 ceiling without truncating Unicode input.
 class CaptureNotesFormatter extends TextInputFormatter {

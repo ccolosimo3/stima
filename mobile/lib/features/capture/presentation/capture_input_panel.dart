@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../domain/local_capture.dart';
 import 'capture_notes_formatter.dart';
 import 'capture_notice.dart';
 import 'capture_view_data.dart';
@@ -29,7 +30,7 @@ class CaptureInputPanel extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final recording = data.recordingPhase == CaptureRecordingPhase.recording;
     final starting = data.recordingPhase == CaptureRecordingPhase.starting;
-    final limitReached = data.clips.length >= 5;
+    final limitReached = data.clips.length >= captureMaxClips;
     final canStart =
         data.canRecord && !data.inputLocked && !starting && !limitReached;
     return Column(
