@@ -19,6 +19,9 @@ vi.mock("@/features/quotes/offline/audioRepository", () => ({
   getTotalAudioBytes: vi.fn(async () => 0),
   listClipsForSession: vi.fn(async () => []),
 }));
+vi.mock("@/features/quotes/offline/captureRepository", () => ({
+  getCaptureSession: vi.fn(async () => null),
+}));
 
 class FakeMediaRecorder {
   static isTypeSupported = vi.fn(() => true);
@@ -111,7 +114,7 @@ describe("useVoiceCapture", () => {
     const storedClip = result.current.clips[0];
     expect(storedClip).toEqual(
       expect.objectContaining({
-        id: "clip-0",
+        id: expect.any(String),
         sequenceNumber: 1,
         mimeType: expect.stringContaining("audio/"),
         sizeBytes: expect.any(Number),

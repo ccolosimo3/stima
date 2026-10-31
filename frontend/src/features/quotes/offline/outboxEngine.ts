@@ -1,3 +1,7 @@
+/** Foreground outbox orchestration over durable capture/job repositories.
+ * Extraction resolves audio against the queued job's identity, then persists
+ * success or the existing classified retry/failure outcome.
+ */
 import { EXTRACTION_MAX_POLLS, EXTRACTION_POLL_INTERVAL_MS } from "@/features/quotes/components/captureScreenHelpers";
 import {
   appendSyncEvent,
@@ -297,6 +301,7 @@ async function extractWithTimeout(
     return await Promise.race([
       quoteService.extract({
         clipIds: session.clipIds,
+        audioOwner: { sessionId: job.sessionId, userId: job.userId },
         notes: session.notes,
         customerId: session.customerId ?? undefined,
         idempotencyKey: job.idempotencyKey,

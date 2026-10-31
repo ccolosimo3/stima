@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { persistRecordedClip } from "@/features/quotes/hooks/useVoiceCapture.helpers";
 import {
   deleteAllClipsForSession,
   deleteAudioClip,
@@ -10,7 +11,7 @@ import {
   listClipsForSession,
   saveAudioClip,
 } from "@/features/quotes/offline/audioRepository";
-import { resetCaptureDbForTests } from "@/features/quotes/offline/captureDb";
+import { getDb, resetCaptureDbForTests } from "@/features/quotes/offline/captureDb";
 
 describe("audioRepository", () => {
   beforeEach(async () => {
@@ -19,6 +20,54 @@ describe("audioRepository", () => {
 
   afterEach(async () => {
     await resetCaptureDbForTests();
+  });
+
+  it("preserves recorded bytes across captures and a reset sequence after reopening storage", async () => {
+    const recordings = [];
+    for (const [sessionId, text] of [["session-a", "first"], ["session-b", "second"], ["session-a", "after reset"]]) {
+      const { clip } = await persistRecordedClip({
+        clipIdSequence: 0,
+        sessionId,
+        userId: "user-1",
+        blob: new Blob([text], { type: "audio/webm" }),
+        recorderMimeType: "audio/webm",
+        durationSeconds: 3,
+      });
+      recordings.push({ clip, sessionId, text });
+    }
+    (await getDb()).close();
+
+    expect(new Set(recordings.map(({ clip }) => clip.id)).size).toBe(3);
+    for (const { clip, sessionId, text } of recordings) {
+      const stored = await getAudioClip(clip.id);
+      if (!stored) throw new Error(`Saved recording ${clip.id} was lost`);
+      expect(stored?.sessionId).toBe(sessionId);
+      expect(await readBlobText(stored.blob)).toBe(text);
+    }
+    expect(await listClipsForSession("session-a")).toHaveLength(2);
+    expect(await listClipsForSession("session-b")).toHaveLength(1);
+  });
+
+  it("rejects a duplicate recording key without changing the original bytes or metadata", async () => {
+    const original = {
+      clipId: "clip-0",
+      sessionId: "session-a",
+      userId: "user-1",
+      blob: new Blob(["original"], { type: "audio/webm" }),
+      mimeType: "audio/webm",
+      sizeBytes: 8,
+      durationSeconds: 3,
+      sequenceNumber: 1,
+    };
+    await saveAudioClip(original);
+    await expect(saveAudioClip({ ...original, sessionId: "session-b", blob: new Blob(["replacement"]) }))
+      .rejects.toThrow();
+    (await getDb()).close();
+
+    const stored = await getAudioClip("clip-0");
+    if (!stored) throw new Error("The original recording was lost after a duplicate insert");
+    expect(stored).toMatchObject({ sessionId: "session-a", userId: "user-1", sequenceNumber: 1 });
+    expect(await readBlobText(stored.blob)).toBe("original");
   });
 
   it("round-trips clip blobs with save/get", async () => {
@@ -187,3 +236,12 @@ describe("audioRepository", () => {
     await expect(getTotalAudioBytes("user-1")).resolves.toBe(35);
   });
 });
+
+function readBlobText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  });
+}

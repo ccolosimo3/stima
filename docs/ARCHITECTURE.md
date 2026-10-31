@@ -328,6 +328,7 @@ Quote extraction guardrails:
 - `POST /quotes/convert-notes` and the sync fallback path of `POST /quotes/extract` return `429 { "detail": "Extraction quota or concurrency exhausted. Please retry later." }` when the per-user daily quota or concurrent in-flight extraction limit is exhausted before provider work starts.
 - The async `POST /quotes/extract` path uses durable `job_records` plus a count of user-owned extraction jobs in `pending|running` state to reject new enqueue attempts with the same `429` detail when the active-job cap is already reached.
 - `POST /quotes/extract` is the canonical capture-to-draft boundary; it accepts audio clips, typed notes, or both, and persists a draft quote before reporting success.
+- Web recordings use independent, insert-only local clip identities; sequence numbers only order their display. Resume retains unresolved saved references, and foreground/outbox extraction validates every intended clip against the capture and user before HTTP submission. Missing or mismatched audio blocks the complete submission; overwritten historical bytes cannot be reconstructed.
 - Extraction worker security logs include segmentation metadata (`last_model_id`, `extraction_invocation_tier`, and `extraction_prompt_variant`) for primary vs fallback analysis.
 - `POST /quotes/{id}/pdf`, `POST /quotes/{id}/send-email`, `POST /invoices/{id}/pdf`, and `POST /invoices/{id}/send-email` are also user-keyed and rate-limited.
 

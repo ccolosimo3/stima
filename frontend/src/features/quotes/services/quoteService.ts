@@ -1,3 +1,8 @@
+/**
+ * Quote API operations and local-audio multipart assembly.
+ * Extraction validates the complete capture/user-owned audio set before HTTP;
+ * missing or mismatched recordings never become a partial submission.
+ */
 import type { Invoice } from "@/features/invoices/types/invoice.types";
 import type {
   BulkActionRequest,
@@ -16,6 +21,7 @@ import type {
 } from "@/features/quotes/types/quote.types";
 import { getAudioClip } from "@/features/quotes/offline/audioRepository";
 import { AudioClipMissingError } from "@/features/quotes/offline/captureTypes";
+import type { LocalCaptureSession } from "@/features/quotes/offline/captureTypes";
 import { buildIdempotencyKey } from "@/shared/lib/idempotency";
 import { request, requestWithMetadata } from "@/shared/lib/http";
 
@@ -54,15 +60,24 @@ interface PersistedExtractionPayload extends ExtractionResult {
   quote_id: string;
 }
 
-async function buildExtractionFormDataFromIds(params: {
+interface ExtractionParams {
   clipIds?: string[];
+  audioOwner?: Pick<LocalCaptureSession, "sessionId" | "userId">;
   notes?: string;
   customerId?: string;
-}): Promise<FormData> {
+  idempotencyKey?: string;
+}
+
+async function buildExtractionFormDataFromIds(params: ExtractionParams): Promise<FormData> {
   const formData = new FormData();
   for (const [index, clipId] of (params.clipIds ?? []).entries()) {
+    const owner = params.audioOwner;
+    if (!owner?.sessionId || !owner.userId) {
+      throw new AudioClipMissingError(clipId);
+    }
     const clip = await getAudioClip(clipId);
-    if (!clip) {
+    // A legacy key can still resolve to a row now owned by another capture/user.
+    if (!clip || clip.sessionId !== owner.sessionId || clip.userId !== owner.userId) {
       throw new AudioClipMissingError(clipId);
     }
     const extension = resolveAudioExtensionFromMimeType(clip.mimeType);
@@ -83,7 +98,7 @@ async function buildExtractionFormDataFromIds(params: {
 
 async function submitExtraction(
   path: string,
-  params: { clipIds?: string[]; notes?: string; customerId?: string; idempotencyKey?: string },
+  params: ExtractionParams,
 ): Promise<QuoteExtractResponse> {
   const formData = await buildExtractionFormDataFromIds(params);
   const headers: HeadersInit = {};
@@ -113,12 +128,8 @@ async function submitExtraction(
   };
 }
 
-async function extract(params: {
-  clipIds?: string[];
-  notes?: string;
-  customerId?: string;
-  idempotencyKey?: string;
-}): Promise<QuoteExtractResponse> {
+/** Resolve owned persisted audio before sending an idempotent extraction request. */
+async function extract(params: ExtractionParams): Promise<QuoteExtractResponse> {
   const idempotencyKey = params.idempotencyKey ?? buildIdempotencyKey();
   return submitExtraction("/api/quotes/extract", {
     ...params,
