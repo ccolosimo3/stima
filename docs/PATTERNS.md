@@ -174,5 +174,5 @@ make verify          # both
 Raw commands (fallback):
 ```bash
 cd backend && ruff check . && mypy . && bandit -r app/ && pytest
-cd frontend && npx tsc --noEmit && npx eslint src/ && npx vitest run && npm run build
+cd frontend && npx tsc --noEmit && npx tsc --project tsconfig.node.json --noEmit && npx eslint src/ vite.config.ts && npx vitest run && npm run build
 ```
