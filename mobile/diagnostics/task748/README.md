@@ -37,6 +37,9 @@ safe stop and reopen evidence. Otherwise return NO-GO or the precise BLOCKED
 prerequisite. Build, recording events and nonzero file size alone cannot pass.
 Native `.task748.jsonl` and Dart `.task748-dart.jsonl` files beside each clip are
 private diagnostic observations, not product metadata or public attachments.
+Native tracing requires iOS 13.4 or later; on older versions it returns without
+writing. The selected iPhone meets that requirement. File writes use throwing
+APIs so a diagnostic storage error cannot escape as an Objective-C exception.
 Publish sanitized source identities, stage outcomes and limits on issue #748.
 No account, SDK, global-service or audio-session policy changes are included.
 

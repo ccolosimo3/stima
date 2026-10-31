@@ -57,6 +57,7 @@ replace('    m_audioRecorder?.stop()', '''    if let recorder = m_audioRecorder 
     }''')
 replace('  private func deleteFile(path: String) throws {', '''  // Task748 only: append private observations alongside the owned clip.
   private func trace(_ stage: String, _ recorder: AVAudioRecorder, extra: [String: Any] = [:]) {
+    guard #available(iOS 13.4, *) else { return }
     var values = extra
     values["stage"] = stage
     values["uptime"] = ProcessInfo.processInfo.systemUptime
@@ -76,9 +77,9 @@ replace('  private func deleteFile(path: String) throws {', '''  // Task748 only
         FileManager.default.createFile(atPath: url.path, contents: nil)
       }
       let file = try FileHandle(forWritingTo: url)
-      defer { file.closeFile() }
-      file.seekToEndOfFile()
-      file.write(data)
+      defer { try? file.close() }
+      try file.seekToEnd()
+      try file.write(contentsOf: data)
     } catch {
       NSLog("Task748 diagnostic write failed: %@", String(describing: error))
     }
