@@ -47,10 +47,16 @@ class _CaptureScreenState extends State<CaptureScreen> {
 
   void _publishCommittedNotes() {
     final value = _notesController.value;
+    if (!value.composing.isCollapsed) {
+      return;
+    }
+    final accepted = _notesFormatter.acceptCommittedValue(value);
+    if (accepted != value) {
+      _notesController.value = accepted;
+      return;
+    }
     // onChanged omits composition-only commits; the editing value observes them.
-    if (!widget.data.inputLocked &&
-        value.composing.isCollapsed &&
-        value.text != _reportedNotes) {
+    if (!widget.data.inputLocked && value.text != _reportedNotes) {
       _reportedNotes = value.text;
       widget.onNotesChanged(value.text);
     }

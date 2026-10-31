@@ -196,6 +196,34 @@ void main() {
   );
 
   testWidgets(
+    'focus loss rejects oversized composition in both field and caller',
+    (tester) async {
+      await tester.pumpWidget(_preview(CapturePreviewScenario.empty));
+      await tester.enterText(find.byType(TextField), 'Keep gate clear');
+      await tester.pump();
+      final oversized = '${'a' * 49999}e\u0301';
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: oversized,
+          selection: TextSelection.collapsed(offset: oversized.length),
+          composing: TextRange(start: 0, end: oversized.length),
+        ),
+      );
+      await tester.pump();
+      await _choose(tester, 'Saved locally');
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Keep gate clear',
+      );
+      expect(
+        tester.widget<CaptureScreen>(find.byType(CaptureScreen)).data.notes,
+        'Keep gate clear',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'caller-loaded notes replace editing state without emitting a user edit',
     (tester) async {
       await tester.pumpWidget(_preview(CapturePreviewScenario.populated));

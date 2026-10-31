@@ -26,14 +26,19 @@ class CaptureNotesFormatter extends TextInputFormatter {
         oldValue.text.length <= captureNotesMaxCodeUnits) {
       _committed = oldValue;
     }
-    // Let the IME finish composition; only committed text reaches the caller.
-    if (!newValue.composing.isCollapsed) {
-      return newValue;
+    return acceptCommittedValue(newValue);
+  }
+
+  /// Shares committed-value validation with controller events such as focus loss.
+  /// Oversized commits return the previous accepted editing value.
+  TextEditingValue acceptCommittedValue(TextEditingValue value) {
+    if (!value.composing.isCollapsed) {
+      return value;
     }
-    if (newValue.text.length > captureNotesMaxCodeUnits) {
+    if (value.text.length > captureNotesMaxCodeUnits) {
       return _committed.copyWith(composing: TextRange.empty);
     }
-    _committed = newValue;
-    return newValue;
+    _committed = value;
+    return value;
   }
 }
