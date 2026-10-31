@@ -1,3 +1,6 @@
+// Exercises AuthProvider through its rendered context and real browser event wiring.
+// Services and saved snapshots are replaced; React lifecycle and subscriptions remain real.
+// Reconnect cases retain visible identity and outbox outcomes as their success oracles.
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -311,23 +314,70 @@ describe("useAuth", () => {
       lastVerifiedAt: new Date().toISOString(),
     });
 
-    render(
+    let onlineEventCount = 0;
+    const observer = new MutationObserver(() => {
+      if (screen.queryByTestId("auth-mode")?.textContent !== "offline_recovered") {
+        return;
+      }
+      observer.disconnect();
+      onlineEventCount += 1;
+      window.dispatchEvent(new Event("online"));
+    });
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+
+    try {
+      render(
+        <AuthProvider>
+          <AuthHarness />
+        </AuthProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("auth-mode")).toHaveTextContent("verified");
+        expect(screen.getByTestId("auth-state")).toHaveTextContent("user9@example.com");
+        expect(mockedRunOutboxPass).toHaveBeenCalledWith("user-9", { forceAfterAuth: true });
+      });
+      expect(onlineEventCount).toBe(1);
+      expect(mockedAuthService.me).toHaveBeenCalledTimes(2);
+      expect(mockedRunOutboxPass).toHaveBeenCalledTimes(1);
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it("does not reverify or resume jobs after offline recovery unmounts", async () => {
+    mockedAuthService.me
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValue({
+        id: "user-9",
+        email: "user9@example.com",
+        is_active: true,
+        is_onboarded: true,
+        timezone: "America/New_York",
+      });
+    mockedReadOfflineUserSnapshot.mockReturnValue({
+      userId: "user-9",
+      isOnboarded: true,
+      timezone: "America/New_York",
+      lastVerifiedAt: new Date().toISOString(),
+    });
+
+    const { unmount } = render(
       <AuthProvider>
         <AuthHarness />
       </AuthProvider>,
     );
-
     await waitFor(() => {
       expect(screen.getByTestId("auth-mode")).toHaveTextContent("offline_recovered");
     });
 
-    window.dispatchEvent(new Event("online"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("auth-mode")).toHaveTextContent("verified");
-      expect(screen.getByTestId("auth-state")).toHaveTextContent("user9@example.com");
-      expect(mockedRunOutboxPass).toHaveBeenCalledWith("user-9", { forceAfterAuth: true });
+    unmount();
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
     });
+
+    expect(mockedAuthService.me).toHaveBeenCalledTimes(1);
+    expect(mockedRunOutboxPass).not.toHaveBeenCalled();
   });
 
   it("deduplicates rapid online events while offline_recovered reverify is in flight", async () => {
