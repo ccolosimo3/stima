@@ -1,9 +1,13 @@
+// Owns verified and offline-recovered browser auth state.
+// Bootstrap can restore a snapshot; reconnect verifies it before resuming outbox jobs.
+// Auth, snapshot persistence and draft cleanup stay behind their feature owners.
 import {
   createElement,
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -40,6 +44,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const RECONNECT_REVERIFY_DEBOUNCE_MS = 1_500;
 
+/** Provides browser auth state and resumes queued captures after successful re-verification. */
 export function AuthProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("signed_out");
@@ -168,7 +173,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     };
   }, [forceSignedOut]);
 
-  useEffect(() => {
+  // The recovery state must not become observable before its online listener is ready.
+  useLayoutEffect(() => {
     if (typeof window === "undefined" || authMode !== "offline_recovered") {
       return;
     }
