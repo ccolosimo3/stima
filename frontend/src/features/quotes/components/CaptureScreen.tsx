@@ -1,9 +1,12 @@
+/** Coordinate local capture input, extraction and draft navigation.
+ * Audio hydration preserves intended references before autosave or submission.
+ */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { useQuoteDraft } from "@/features/quotes/hooks/useQuoteDraft";
-import { EXTRACTION_STAGE_DELAY_MS, getExtractionStages } from "@/features/quotes/components/captureScreenHelpers";
+import { getExtractionStages, startExtractionStageTimers } from "@/features/quotes/components/captureScreenHelpers";
 import {
   clearExtractionRequestIdempotencyKey,
   isInFlightIdempotencyConflict,
@@ -31,6 +34,7 @@ import { perfMark, perfMeasure, perfMeasureSincePageLoad } from "@/shared/perf";
 import { useToast } from "@/ui/Toast";
 const START_BLANK_GUARD_TARGET = "__start_blank__";
 
+/** Persist capture changes and submit complete owned input for extraction. */
 export function CaptureScreen(): React.ReactElement {
   const navigate = useNavigate();
   const { show } = useToast();
@@ -62,6 +66,8 @@ export function CaptureScreen(): React.ReactElement {
   });
   const {
     clips,
+    clipIds: intendedClipIds,
+    isHydrating: isHydratingVoiceClips,
     elapsedSeconds,
     error: voiceError,
     isRecording,
@@ -80,7 +86,7 @@ export function CaptureScreen(): React.ReactElement {
   const [hasAttemptedAutoExtract, setHasAttemptedAutoExtract] = useState(false);
   const extractionIdempotencyKeyRef = useRef<string | null>(null);
   const isExtracting = extractionStage !== null;
-  const hasClips = clips.length > 0;
+  const hasClips = intendedClipIds.length > 0;
   const hasNotes = notes.trim().length > 0;
   const launchOrigin = resolveCaptureLaunchOrigin({
     customerId,
@@ -133,8 +139,11 @@ export function CaptureScreen(): React.ReactElement {
   }, [clearError, error, localHydrationError, localSaveError, voiceError]);
 
   useEffect(() => {
-    void setLocalCaptureClipIds(clips.map((clip) => clip.id));
-  }, [clips, setLocalCaptureClipIds]);
+    // Empty/partial hydration is not an explicit user deletion.
+    if (!isHydratingLocalSession && !isHydratingVoiceClips) {
+      void setLocalCaptureClipIds(intendedClipIds);
+    }
+  }, [intendedClipIds, isHydratingLocalSession, isHydratingVoiceClips, setLocalCaptureClipIds]);
 
   const handleNotesChange = useCaptureExtractionKeyReset({
     clips,
@@ -159,7 +168,7 @@ export function CaptureScreen(): React.ReactElement {
   }, [displayedError, show]);
 
   async function onExtract(): Promise<void> {
-    // TODO(spec1): perfMark("capture:local:save_start") / perfMark("capture:local:save_done")
+    if (isHydratingLocalSession || isHydratingVoiceClips) return;
     clearActionErrors();
     let idempotencyKey = "";
     let extractionSessionId: string | null = null;
@@ -204,20 +213,9 @@ export function CaptureScreen(): React.ReactElement {
     void markLocalCaptureStatus("submitting");
     perfMark("capture:extract:start");
     clearExtractionStageTimers();
-    const stages = getExtractionStages(hasClips, hasNotes);
-    setExtractionStage(stages[0]);
-    stages.slice(1).forEach((stage, index) => {
-      const timerId = window.setTimeout(
-        () => {
-          if (!isMountedRef.current) {
-            return;
-          }
-          setExtractionStage(stage);
-        },
-        EXTRACTION_STAGE_DELAY_MS * (index + 1),
-      );
-      extractionStageTimerRefs.current.push(timerId);
-    });
+    extractionStageTimerRefs.current = startExtractionStageTimers(
+      getExtractionStages(hasClips, hasNotes), setExtractionStage, () => isMountedRef.current,
+    );
 
     try {
       ({
@@ -229,7 +227,8 @@ export function CaptureScreen(): React.ReactElement {
         extractionIdempotencyKeyRef,
       }));
       const extraction = await quoteService.extract({
-        clipIds: clips.map((clip) => clip.id),
+        clipIds: intendedClipIds,
+        audioOwner: extractionSessionId && user?.id ? { sessionId: extractionSessionId, userId: user.id } : undefined,
         notes,
         customerId,
         idempotencyKey,
@@ -366,7 +365,8 @@ export function CaptureScreen(): React.ReactElement {
   const hasReachedClipLimit = clips.length >= MAX_VOICE_CLIPS_PER_CAPTURE;
   const hasUnsavedWork = clips.length > 0 || (notes.trim().length > 0
     && (localSessionId === null || localSaveState === "saving" || localSaveState === "error"));
-  const canExtract = (hasClips || hasNotes) && !isExtracting && !isRecording && !isRetryLockedByInFlightExtraction;
+  const canExtract = (hasClips || hasNotes) && !isHydratingLocalSession && !isHydratingVoiceClips
+    && !isExtracting && !isRecording && !isRetryLockedByInFlightExtraction;
   const localStatusCopy = localSaveState === "saving"
     ? "Saving on this device..."
     : localSaveState === "error"

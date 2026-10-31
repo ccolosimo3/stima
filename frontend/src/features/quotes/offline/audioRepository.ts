@@ -5,12 +5,13 @@ type UnknownRecord = Record<string, unknown>;
 
 type SaveAudioClipInput = Omit<LocalAudioClip, "createdAt">;
 
+/** Insert a recording once; an existing clip identity must never replace saved audio. */
 export async function saveAudioClip(clip: SaveAudioClipInput): Promise<void> {
   const blobData = await readBlobAsArrayBuffer(clip.blob);
   const db = await getDb();
   const transaction = db.transaction(CAPTURE_STORE_NAMES.audioClips, "readwrite");
   const store = transaction.objectStore(CAPTURE_STORE_NAMES.audioClips);
-  store.put({
+  store.add({
     clipId: clip.clipId,
     sessionId: clip.sessionId,
     userId: clip.userId,

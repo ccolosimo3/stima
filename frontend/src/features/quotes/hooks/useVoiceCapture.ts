@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+/**
+ * Record and reload local audio metadata while blobs remain in IndexedDB.
+ * Unavailable saved references stay part of the extraction input; hydration is
+ * complete only for the current session, so a partial view cannot erase them.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteAllClipsForSession,
   deleteAudioClip,
@@ -14,7 +19,6 @@ import {
   MAX_VOICE_CLIPS_PER_CAPTURE,
   persistRecordedClip,
   resolvePreferredMimeType,
-  revokeClipUrl,
   STORAGE_SOFT_CAP_MESSAGE,
   stopStream,
 } from "@/features/quotes/hooks/useVoiceCapture.helpers";
@@ -27,6 +31,8 @@ export {
 export type { VoiceClip } from "@/features/quotes/hooks/useVoiceCapture.helpers";
 interface UseVoiceCaptureResult {
   clips: VoiceClip[];
+  clipIds: string[];
+  isHydrating: boolean;
   elapsedSeconds: number;
   error: string | null;
   isRecording: boolean;
@@ -37,11 +43,15 @@ interface UseVoiceCaptureResult {
   clearClips: () => void;
   clearError: () => void;
 }
+/** Own recording/storage side effects and preserve unresolved references on resume. */
 export function useVoiceCapture(
   sessionId: string | null,
   userId: string | undefined,
 ): UseVoiceCaptureResult {
   const [clips, setClips] = useState<VoiceClip[]>([]);
+  const [unresolvedClipIds, setUnresolvedClipIds] = useState<string[]>([]);
+  const [hydratedSessionId, setHydratedSessionId] = useState<string | null>(null);
+  const clipIds = useMemo(() => [...clips.map((clip) => clip.id), ...unresolvedClipIds], [clips, unresolvedClipIds]);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -54,7 +64,6 @@ export function useVoiceCapture(
   const chunksRef = useRef<BlobPart[]>([]);
   const clipIdSequenceRef = useRef(0);
   const clipsRef = useRef<VoiceClip[]>([]);
-  const clipUrlByIdRef = useRef<Map<string, string>>(new Map());
   const sessionIdRef = useRef<string | null>(sessionId);
   const userIdRef = useRef<string | undefined>(userId);
   const recordingSessionIdRef = useRef<string | null>(null);
@@ -71,6 +80,8 @@ export function useVoiceCapture(
     let isActive = true;
     if (!sessionId) {
       setClips([]);
+      setUnresolvedClipIds([]);
+      setHydratedSessionId(null);
       clipIdSequenceRef.current = 0;
       return () => {
         isActive = false;
@@ -78,11 +89,13 @@ export function useVoiceCapture(
     }
     void (async () => {
       try {
-        const { clips: persistedClips, maxSequence } = await loadPersistedVoiceClips(sessionId);
+        const { clips: persistedClips, maxSequence, unresolvedClipIds } = await loadPersistedVoiceClips(sessionId);
         if (!isActive) {
           return;
         }
         setClips(persistedClips);
+        setUnresolvedClipIds(unresolvedClipIds);
+        setHydratedSessionId(sessionId);
         clipIdSequenceRef.current = maxSequence;
       } catch {
         if (isActive) {
@@ -110,9 +123,6 @@ export function useVoiceCapture(
     setError(null);
   }, []);
   const removeClip = useCallback((clipId: string) => {
-    const trackedUrl = clipUrlByIdRef.current.get(clipId);
-    revokeClipUrl(trackedUrl);
-    clipUrlByIdRef.current.delete(clipId);
     setClips((currentClips) => currentClips.filter((clip) => clip.id !== clipId));
     if (!sessionIdRef.current) {
       return;
@@ -122,11 +132,8 @@ export function useVoiceCapture(
     });
   }, []);
   const clearClips = useCallback(() => {
-    clipUrlByIdRef.current.forEach((objectUrl) => {
-      revokeClipUrl(objectUrl);
-    });
-    clipUrlByIdRef.current.clear();
     setClips([]);
+    setUnresolvedClipIds([]);
     const activeSessionId = sessionIdRef.current;
     if (!activeSessionId) {
       return;
@@ -259,7 +266,6 @@ export function useVoiceCapture(
     }
   }, [clearDurationLimitTimer, isRecording, isSupported, stopRecording, stopTimer]);
   useEffect(() => {
-    const clipUrlById = clipUrlByIdRef.current;
     return () => {
       stopTimer();
       clearDurationLimitTimer();
@@ -268,14 +274,12 @@ export function useVoiceCapture(
       if (recorder && recorder.state !== "inactive") {
         recorder.stop();
       }
-      clipUrlById.forEach((objectUrl) => {
-        revokeClipUrl(objectUrl);
-      });
-      clipUrlById.clear();
     };
   }, [clearDurationLimitTimer, stopTimer]);
   return {
     clips,
+    clipIds,
+    isHydrating: hydratedSessionId !== sessionId,
     elapsedSeconds,
     error,
     isRecording,

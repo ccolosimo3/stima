@@ -1,3 +1,6 @@
+/** Component behavior and extraction progress with mocked capture/service owners.
+ * Real persistence and hydration composition live in CaptureScreen.audioIntegrity.
+ */
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -282,6 +285,8 @@ function makeJobStatusResponse(
 function mockVoiceCapture(overrides: Partial<ReturnType<typeof useVoiceCapture>> = {}): void {
   mockedUseVoiceCapture.mockReturnValue({
     clips: [],
+    clipIds: overrides.clips?.map((clip) => clip.id) ?? [],
+    isHydrating: false,
     elapsedSeconds: 0,
     error: null,
     isRecording: false,
@@ -607,6 +612,7 @@ describe("CaptureScreen", () => {
     await waitFor(() => {
       expect(mockedQuoteService.extract).toHaveBeenCalledWith({
         clipIds: [clipFixture.id],
+        audioOwner: { sessionId: "local-session-1", userId: "user-1" },
         notes: "  add travel surcharge  ",
         customerId: "cust-1",
         idempotencyKey: expect.any(String),
@@ -749,6 +755,7 @@ describe("CaptureScreen", () => {
     await waitFor(() => {
       expect(mockedQuoteService.extract).toHaveBeenCalledWith({
         clipIds: [],
+        audioOwner: { sessionId: "local-session-1", userId: "user-1" },
         notes: "Install sod in backyard",
         customerId: undefined,
         idempotencyKey: expect.any(String),
