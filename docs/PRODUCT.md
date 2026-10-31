@@ -3,6 +3,8 @@
 **Version:** 1.0 — March 2026
 **Status:** Active
 
+Product positioning remains applicable. Current implementation sequencing is owned by the [Flutter roadmap](../plans/flutter/roadmap.md); the retained P1 pilot plan does not replace that direction or establish current release readiness.
+
 ---
 
 ## What Is Stima?
@@ -140,7 +142,11 @@ Full spec: `docs/roadmaps/P0_FIELD_RESILIENT_CAPTURE.md`
 
 ---
 
-### P1 — Pilot-Ready Product & Founder GTM (active)
+### Flutter — Native Capture and Quote Journey (active)
+
+**Goal:** Build a serious Android/iPhone portfolio client while retaining the web app and backend. Deliver real local Capture/recovery before native authentication, Extraction, Quote Review and sharing. Current scope and dependencies: [Flutter roadmap](../plans/flutter/roadmap.md).
+
+### P1 — Pilot-Ready Product & Founder GTM (retained release context)
 
 **Goal:** Make Stima ready for real pilot users and founder-led validation.
 
@@ -152,15 +158,12 @@ Full spec: `docs/roadmaps/P1_PILOT_READY_PRODUCT_GTM.md`
 
 ---
 
-### V2 — Speed and Memory (deferred — resumes after P1)
+### V2 — Speed and Memory (historical hypotheses; not the next execution queue)
 
 **Goal:** Make repeat quoting dramatically faster. Turn Stima into a business memory
 layer — not just a generator for one-off quotes.
 
-**Deferred pending P1 completion and pilot learning.** The V2 direction (templates, quote duplication,
-customer detail rebuild, gallery/photos, context-aware extraction, revision history,
-stronger search) remains the correct next build after P1 ships. Exact scope will be
-adjusted based on P1 pilot usage data.
+Choose later breadth from the working core journey and actual use. Quote duplication and the Line Item Catalog already exist in the web product; do not rebuild them as a new template system. Gallery/photos, context-aware extraction, revision history and stronger search remain hypotheses, not approved implementation scope.
 
 Historical directional context: `docs/archive/roadmaps/V2.1_ROADMAP.md`
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Canonical for GitHub Spec #652 (locked decisions). Local agents: read this file before child Tasks #653-#656.
+Historical acceptance record for completed GitHub Spec #652 and Tasks #653-#656 (all closed as completed in May 2026). Archived on 2026-10-31; this is not a new execution queue. Runtime contracts remain owned by the current code and docs.
 
 **Type:** `spec`
 **Child issues:** 4 Tasks (type: `task`)

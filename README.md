@@ -35,7 +35,7 @@ Its main idea is simple: **capture first, refine second**. Instead of pushing th
 
 ## Current Focus
 
-Recent work has focused on making the app more trustworthy and practical in the field: stronger reconnect/auth recovery, clearer degraded extraction visibility, mixed voice + text capture support, and tighter review/edit polish around quote data.
+Current work adds a Flutter client for Android and iPhone while retaining the React web client, FastAPI backend and public document links. The first native journey is dependable local voice/text Capture and restart recovery, followed by authentication, Extraction, Quote Review and sharing. See the [Flutter roadmap](plans/flutter/roadmap.md) and [planning index](plans/README.md) for sequencing and the retained pilot/security backlog. Browser features listed above are not a claim of native feature parity.
 
 ## Tech Stack
 

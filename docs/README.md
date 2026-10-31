@@ -5,7 +5,10 @@ Use this index to keep template docs easy to traverse.
 ## Active Product Direction
 
 - `PRODUCT.md` — current product positioning, ICP, non-goals, and decision heuristics
-- `roadmaps/P1_PILOT_READY_PRODUCT_GTM.md` — active P1 roadmap and spec umbrella (pilot-ready product & founder GTM program)
+- [Flutter roadmap](../plans/flutter/roadmap.md) — current mobile delivery direction and dependencies
+- [Planning index](../plans/README.md) — active plans and dated archives
+- [Backlog reconciliation](../plans/flutter/backlog-review.md) — disposition and remaining proof for the older open issues
+- `roadmaps/P1_PILOT_READY_PRODUCT_GTM.md` — retained pilot/GTM acceptance and release obligations; current sequencing is owned by the Flutter roadmap
 
 ## Workflow Docs
 
